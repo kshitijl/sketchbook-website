@@ -10,6 +10,12 @@ export function getPrimaryAsset(piece: Piece): Asset | undefined {
 	return piece.assets.find((a) => a.kind === 'final') ?? piece.assets[0];
 }
 
+/** Final piece first, then everything else, so the main image always leads — used by both the
+ * piece detail page and the map's inline detail panel. */
+export function orderAssetsFinalFirst(assets: Asset[]): Asset[] {
+	return [...assets].sort((a, b) => (a.kind === 'final' ? -1 : b.kind === 'final' ? 1 : 0));
+}
+
 export function getPiecesByTag(data: PiecesData, slug: string): Piece[] {
 	return data.pieces
 		.filter((p) => p.tags.includes(slug))

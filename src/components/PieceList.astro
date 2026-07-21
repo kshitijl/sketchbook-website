@@ -1,0 +1,17 @@
+---
+import PieceThumb from './PieceThumb.astro';
+import type { Piece } from '../lib/types';
+
+interface Props {
+	pieces: Piece[];
+}
+const { pieces } = Astro.props;
+---
+
+<ul style="list-style:none; padding:0;">
+	{pieces.map((piece) => (
+		<li style="margin-bottom:0.5rem;">
+			<a href={`/piece/${piece.id}`}><PieceThumb piece={piece} />{piece.title}</a> — {piece.date}
+		</li>
+	))}
+</ul>

@@ -152,6 +152,21 @@ including Free, rate-limited to 5 requests/minute (far above what occasional edi
 propagates in well under a second. Images are unaffected by any of this — they stay long-cached/
 immutable, since they're already invalidation-free by virtue of versioned keys.
 
+**Important, easy to miss**: Cloudflare does **not** cache HTML at the edge by default, regardless
+of the `Cache-Control` header — its default cache eligibility is decided by file extension
+(`.css`/`.js`/`.png`/etc. are cached automatically; extensionless paths like `/piece/042` are not),
+not by header presence. Without an explicit **Cache Rule** for this zone (`Eligible for cache: Yes`,
+`Edge TTL: respect origin headers`), every request would silently hit the Worker and re-render —
+the entire "renders once, then pure cache" premise depends on this one dashboard step. It's a
+**required** part of the Cloudflare setup, not optional polish — see docs/TODO.md.
+
+**Verifying it's actually working**: the precise signal is the `CF-Cache-Status` response header
+Cloudflare adds to every response (`HIT` = served from cache, Worker didn't run; `MISS`/`EXPIRED`
+= it did) — check via `curl -I` or the browser's Network tab. For an always-visible, no-devtools-
+needed sanity check, every page also renders a small debug footer (see Base.astro) showing the
+render timestamp and edge colo — if reloading the same URL keeps showing the same timestamp,
+that request was served from cache, not re-rendered.
+
 ## Images: R2 + on-demand transforms
 
 Originals land in R2 (zero egress fees, ~$0.015/GB/mo). Thumbnail/medium sizes are not separately

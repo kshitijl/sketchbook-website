@@ -166,7 +166,7 @@ if (piece && Astro.request.method === 'POST') {
 			<h1>Edit: {piece.title}</h1>
 
 			{errors.length > 0 && (
-				<ul style="color:#b00;">
+				<ul style="color:var(--accent-3);">
 					{errors.map((error) => (
 						<li>{error}</li>
 					))}

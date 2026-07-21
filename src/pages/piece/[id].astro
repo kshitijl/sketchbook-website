@@ -2,7 +2,7 @@
 import { env } from 'cloudflare:workers';
 import Base from '../../layouts/Base.astro';
 import { getPieces } from '../../lib/data';
-import { getPieceById } from '../../lib/facets';
+import { getPieceById, orderAssetsFinalFirst } from '../../lib/facets';
 import { imageUrl } from '../../lib/images';
 import { PAGE_CACHE_CONTROL } from '../../lib/cache';
 
@@ -16,10 +16,7 @@ if (!piece) {
 	Astro.response.status = 404;
 }
 
-// Final piece first, then everything else, so the main image always leads.
-const orderedAssets = piece
-	? [...piece.assets].sort((a, b) => (a.kind === 'final' ? -1 : b.kind === 'final' ? 1 : 0))
-	: [];
+const orderedAssets = piece ? orderAssetsFinalFirst(piece.assets) : [];
 ---
 
 <Base title={piece ? piece.title : 'Not found'}>

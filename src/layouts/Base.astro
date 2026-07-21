@@ -3,6 +3,13 @@ interface Props {
 	title: string;
 }
 const { title } = Astro.props;
+
+// Debug footer: if reloading the same URL keeps showing the same timestamp, that request was
+// served from Cloudflare's edge cache, not re-rendered by the Worker. See docs/architecture.md's
+// Cache policy section. `cf` is a Cloudflare-specific Request extension — absent under plain
+// `astro dev`, present (real or emulated) under wrangler dev / deployed.
+const renderedAt = new Date().toISOString();
+const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 ---
 
 <html lang="en">
@@ -15,27 +22,25 @@ const { title } = Astro.props;
 			:root {
 				color-scheme: light dark;
 				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+				--mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-				--bg: #faf5f2;
-				--bg-alt: #f3e8f7;
-				--text: #2b2230;
-				--text-muted: #6b5f72;
-				--accent: #8b5cf6;
-				--accent-2: #ec4899;
-				--accent-3: #f87171;
-				--border: #e4d5ec;
-				--radius: 8px;
+				--bg: #f4f2ec;
+				--panel: #ffffff;
+				--text: #141414;
+				--text-muted: #6b6b6b;
+				--border: #141414;
+				--pink: #ff3d8f;
+				--purple: #7c5cff;
 			}
 			@media (prefers-color-scheme: dark) {
 				:root {
-					--bg: #1e1823;
-					--bg-alt: #2b2233;
-					--text: #f2e9f5;
-					--text-muted: #b9a9c2;
-					--accent: #c4a3ff;
-					--accent-2: #f9a8d4;
-					--accent-3: #fca5a5;
-					--border: #453a4f;
+					--bg: #141414;
+					--panel: #1c1c1c;
+					--text: #f4f2ec;
+					--text-muted: #9a9a9a;
+					--border: #f4f2ec;
+					--pink: #ff5fa0;
+					--purple: #a691ff;
 				}
 			}
 
@@ -44,9 +49,9 @@ const { title } = Astro.props;
 			}
 			body {
 				margin: 0 auto;
-				max-width: 60rem;
+				max-width: 64rem;
 				padding: 1.5rem;
-				line-height: 1.6;
+				line-height: 1.5;
 				background: var(--bg);
 				color: var(--text);
 			}
@@ -54,65 +59,86 @@ const { title } = Astro.props;
 			nav {
 				display: flex;
 				flex-wrap: wrap;
-				gap: 0.5rem;
+				border: 2px solid var(--border);
 				margin-bottom: 1.5rem;
-				padding-bottom: 1rem;
-				border-bottom: 2px solid var(--border);
+				font-family: var(--mono);
+				text-transform: uppercase;
+				font-size: 0.75rem;
+				letter-spacing: 0.05em;
 			}
 			nav a {
-				padding: 0.35rem 0.85rem;
-				border-radius: 999px;
-				background: var(--bg-alt);
-				color: var(--accent);
+				padding: 0.6rem 1rem;
+				color: var(--text);
 				text-decoration: none;
-				font-weight: 600;
-				font-size: 0.9rem;
+				font-weight: 700;
+				border-right: 2px solid var(--border);
+			}
+			nav a:last-child {
+				border-right: none;
 			}
 			nav a:hover {
-				background: var(--accent);
+				background: var(--pink);
 				color: white;
 			}
 
-			h1,
-			h2,
-			h3 {
-				font-weight: 700;
-				letter-spacing: -0.01em;
-			}
 			h1 {
-				color: var(--accent);
+				font-weight: 800;
+				letter-spacing: -0.02em;
+				text-transform: uppercase;
+				border-bottom: 3px solid var(--border);
+				padding-bottom: 0.5rem;
+				margin-bottom: 1rem;
 			}
 			h2 {
-				color: var(--text);
-				border-left: 4px solid var(--accent-2);
-				padding-left: 0.6rem;
+				display: inline-block;
+				font-family: var(--mono);
+				text-transform: uppercase;
+				font-size: 0.8rem;
+				letter-spacing: 0.05em;
+				background: var(--border);
+				color: var(--bg);
+				padding: 0.25rem 0.6rem;
+				margin-bottom: 0.75rem;
+			}
+
+			section {
+				border: 2px solid var(--border);
+				background: var(--panel);
+				padding: 1rem;
+				margin-bottom: 1.5rem;
 			}
 
 			a {
-				color: var(--accent-2);
+				color: var(--purple);
 			}
 			a:hover {
-				color: var(--accent);
+				color: var(--pink);
 			}
 
 			em {
 				color: var(--text-muted);
+				font-style: normal;
+				font-family: var(--mono);
+				font-size: 0.85rem;
 			}
 
 			button,
 			input[type='submit'] {
-				background: var(--accent);
-				color: white;
-				border: none;
+				background: var(--text);
+				color: var(--bg);
+				border: 2px solid var(--border);
 				padding: 0.5rem 1rem;
-				border-radius: var(--radius);
-				font-weight: 600;
-				font: inherit;
+				font-weight: 700;
+				font-family: var(--mono);
+				text-transform: uppercase;
+				font-size: 0.8rem;
 				cursor: pointer;
 			}
 			button:hover,
 			input[type='submit']:hover {
-				background: var(--accent-2);
+				background: var(--pink);
+				border-color: var(--pink);
+				color: white;
 			}
 
 			input[type='text'],
@@ -121,45 +147,59 @@ const { title } = Astro.props;
 			input[type='email'],
 			textarea,
 			select {
-				border: 1px solid var(--border);
-				border-radius: var(--radius);
+				border: 2px solid var(--border);
 				padding: 0.45rem 0.6rem;
-				background: var(--bg-alt);
+				background: var(--panel);
 				color: var(--text);
 				font: inherit;
 			}
 
 			.tag-chip {
-				background: var(--bg-alt);
-				color: var(--accent);
-				border: 1px solid var(--border);
-				border-radius: 999px;
-				padding: 0.3rem 0.7rem;
-				font-size: 0.85rem;
-				font-weight: 600;
+				background: var(--panel);
+				color: var(--text);
+				border: 2px solid var(--border);
+				font-family: var(--mono);
+				text-transform: uppercase;
+				font-size: 0.75rem;
+				font-weight: 700;
+				padding: 0.3rem 0.6rem;
 			}
 			.tag-chip:hover {
-				background: var(--accent-2);
+				background: var(--purple);
 				color: white;
-				border-color: var(--accent-2);
+				border-color: var(--purple);
 			}
 
 			img {
-				border-radius: var(--radius);
+				border: 2px solid var(--border);
 			}
 
 			figure {
 				margin: 0 0 1rem 0;
 			}
 			figcaption {
+				font-family: var(--mono);
+				text-transform: uppercase;
+				font-size: 0.75rem;
 				color: var(--text-muted);
-				font-size: 0.85rem;
 			}
 
 			details summary {
 				cursor: pointer;
-				color: var(--accent);
-				font-weight: 600;
+				font-family: var(--mono);
+				text-transform: uppercase;
+				font-size: 0.8rem;
+				font-weight: 700;
+			}
+
+			footer.debug {
+				margin-top: 3rem;
+				padding-top: 1rem;
+				border-top: 1px solid var(--text-muted);
+				font-family: var(--mono);
+				font-size: 0.7rem;
+				color: var(--text-muted);
+				opacity: 0.6;
 			}
 		</style>
 	</head>
@@ -172,5 +212,6 @@ const { title } = Astro.props;
 			<a href="/admin">Admin</a>
 		</nav>
 		<slot />
+		<footer class="debug">rendered {renderedAt} · edge: {colo}</footer>
 	</body>
 </html>

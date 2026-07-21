@@ -1,7 +1,7 @@
 ---
 import { env } from 'cloudflare:workers';
 import Base from '../layouts/Base.astro';
-import PieceThumb from '../components/PieceThumb.astro';
+import PieceList from '../components/PieceList.astro';
 import { getPieces } from '../lib/data';
 import { getPaintingStats, getRandomPieces } from '../lib/facets';
 import { PAGE_CACHE_CONTROL } from '../lib/cache';
@@ -57,13 +57,7 @@ const rediscover = getRandomPieces(
 		{favorites.length === 0 ? (
 			<p><em>No favorites marked yet.</em></p>
 		) : (
-			<ul style="list-style:none; padding:0;">
-				{favorites.map((piece) => (
-					<li style="margin-bottom:0.5rem;">
-						<a href={`/piece/${piece.id}`}><PieceThumb piece={piece} />{piece.title}</a> — {piece.date}
-					</li>
-				))}
-			</ul>
+			<PieceList pieces={favorites} />
 		)}
 	</section>
 
@@ -72,26 +66,14 @@ const rediscover = getRandomPieces(
 		{recent.length === 0 ? (
 			<p><em>Nothing uploaded yet.</em></p>
 		) : (
-			<ul style="list-style:none; padding:0;">
-				{recent.map((piece) => (
-					<li style="margin-bottom:0.5rem;">
-						<a href={`/piece/${piece.id}`}><PieceThumb piece={piece} />{piece.title}</a> — {piece.date}
-					</li>
-				))}
-			</ul>
+			<PieceList pieces={recent} />
 		)}
 	</section>
 
 	{rediscover.length > 0 && (
 		<section>
 			<h2>Rediscover</h2>
-			<ul style="list-style:none; padding:0;">
-				{rediscover.map((piece) => (
-					<li style="margin-bottom:0.5rem;">
-						<a href={`/piece/${piece.id}`}><PieceThumb piece={piece} />{piece.title}</a> — {piece.date}
-					</li>
-				))}
-			</ul>
+			<PieceList pieces={rediscover} />
 		</section>
 	)}
 </Base>

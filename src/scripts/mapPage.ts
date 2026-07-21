@@ -1,34 +1,8 @@
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-
-interface Asset {
-	id: string;
-	kind: string;
-	r2Key: string;
-	width: number;
-	height: number;
-	caption?: string;
-}
-
-interface Piece {
-	id: string;
-	title: string;
-	date: string;
-	stage: string;
-	location: { lat: number; lng: number; placeName: string };
-	tags: string[];
-	notes: string;
-	favoriteRank: number | null;
-	assets: Asset[];
-}
-
-function imageUrl(r2Key: string): string {
-	return `/img/${r2Key}`;
-}
-
-function getPrimaryAsset(piece: Piece): Asset | undefined {
-	return piece.assets.find((a) => a.kind === 'final') ?? piece.assets[0];
-}
+import { imageUrl } from '../lib/images';
+import { getPrimaryAsset, orderAssetsFinalFirst } from '../lib/facets';
+import type { Piece } from '../lib/types';
 
 /** Escapes untrusted text for safe interpolation into innerHTML — this data ultimately comes
  * from the site owner's own admin form, but the click-to-detail panel is built via innerHTML, so
@@ -40,7 +14,7 @@ function escapeHtml(s: string): string {
 }
 
 function renderDetail(piece: Piece): string {
-	const ordered = [...piece.assets].sort((a, b) => (a.kind === 'final' ? -1 : b.kind === 'final' ? 1 : 0));
+	const ordered = orderAssetsFinalFirst(piece.assets);
 	const imagesHtml = ordered
 		.map((asset) => {
 			const dims = asset.width && asset.height ? ` width="${asset.width}" height="${asset.height}"` : '';

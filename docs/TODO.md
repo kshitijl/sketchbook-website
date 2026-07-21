@@ -182,11 +182,57 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
 - [ ] Still to do during the Cloudflare setup pass: create the Cache-Purge-scoped API token and
       note the zone ID, decide the real `ADMIN_EMAIL`, and set all three as Worker secrets
       (`wrangler secret put`) — no code changes needed, both features activate automatically
+- [ ] **Required, easy to miss**: create a Cache Rule for the zone (`Eligible for cache: Yes`,
+      `Edge TTL: respect origin headers`) covering the whole hostname. Cloudflare does not cache
+      HTML at the edge by default regardless of `Cache-Control` — eligibility is decided by file
+      extension, not header presence. Without this one rule, every request silently hits the
+      Worker and re-renders — the entire "renders once, then pure cache" premise depends on it.
+      See docs/architecture.md's Cache policy section.
+
+## Full code review pass (2026-07-21)
+Went through every file for simplicity and correctness per an explicit request to "check
+everything, keep it as simple as possible." Findings, all fixed:
+- [x] Removed `applyPageCacheHeaders()` from `src/lib/cache.ts` — dead code, never called (every
+      page sets the header directly instead)
+- [x] `404.astro` was missing its `Cache-Control` header (inconsistent with every other page,
+      relied on Cloudflare's default instead of an explicit contract) — added
+- [x] Extracted `PieceList.astro` — the exact same piece-list rendering block was duplicated
+      identically 6 times across `index.astro` (×3), `timeline.astro`, `browse.astro`, and
+      `tag/[slug].astro`. `admin/index.astro` and `admin/favorites.astro` deliberately still
+      render their own (they have genuinely different extra content — an edit link, a rank input)
+- [x] `kind/[kind].astro` hardcoded its own second copy of the 5 asset kind values (`VALID_KINDS`)
+      instead of deriving them from `ASSET_KIND_FIELDS` — a real drift risk if a kind is ever
+      added. Now derived from the single source of truth.
+- [x] `mapPage.ts` re-declared its own local `Asset`/`Piece` interfaces and duplicated
+      `imageUrl()`/`getPrimaryAsset()` instead of importing the real ones from `src/lib/` — those
+      are pure, environment-agnostic code with no server-only dependencies, so they're perfectly
+      safe to import into a client bundle. Removed ~20 lines of duplication.
+- [x] Extracted `orderAssetsFinalFirst()` into `src/lib/facets.ts` — the identical "final image
+      first" sort was duplicated in `piece/[id].astro` and `mapPage.ts`
+- [x] `--accent-3` (the red from "pastel purple/pink/red") was defined in the theme but never
+      used, while two admin forms hardcoded `color:#b00` for error messages, bypassing the theme
+      entirely (broken in dark mode). Wired the variable in and removed the hardcoded color.
+- [x] Fixed a stale comment in `assetKinds.ts` referencing the edit form as not-yet-built
 
 ## Phase 6 — Polish
-- [x] Visual design first pass: pastel theme (`src/layouts/Base.astro`, global CSS custom
-      properties, light/dark variants) — palette/typography can still be refined further on
-      feedback, but the "ugly to test" gap is closed
+- [x] Visual design, redone per moodboard direction (2026-07-21): "a weird personal art archive
+      that feels like a beautifully designed Mac application" — grid/panel/bordered brutalist-UI
+      feel rather than the earlier soft pastel-everywhere pass (which the moodboard explicitly
+      rejected). Black/cream foundation, strong 2px borders on nav/sections/images/inputs, square
+      corners (no border-radius), monospace for labels/nav/tags/captions (system monospace stack,
+      no font files), hot pink + purple as accents rather than the whole palette, light/dark
+      variants preserved. `src/layouts/Base.astro` only — no page files needed changes since the
+      theme is global. Further iteration likely once seen with real content/pieces.
+- [x] Debug footer on every page (`Base.astro`): render timestamp + Cloudflare edge colo
+      (`Astro.request.cf.colo`, falls back to `'local'` off-network), small muted monospace text
+      at the very bottom. Lets you visually confirm caching: if reloading the same URL keeps
+      showing the same timestamp, that request was served from the edge cache, not re-rendered.
+      The precise/authoritative signal is still the `CF-Cache-Status` response header (`HIT` vs
+      `MISS`/`EXPIRED`) via `curl -I` or browser devtools — the footer is a no-devtools-needed
+      sanity check, not a replacement for that. Verified locally: shows a real-looking colo value
+      even under plain `astro dev` (Astro's Cloudflare dev shim), timestamp changes on every
+      reload as expected (local dev never edge-caches — this check only means something once
+      deployed with the Cache Rule above in place).
 - [ ] Confirm phase/density chart reads well on the timeline
 - [ ] Test the full admin flow on a phone (upload + retag + reorder favorites)
 - [ ] Deploy to production custom domain, confirm cold-region load behavior is acceptable

@@ -16,8 +16,3 @@
  *   cached and ready; this value has no bearing on how often Astro's render code actually runs.
  */
 export const PAGE_CACHE_CONTROL = 'public, max-age=60, s-maxage=2592000'; // 1min browser, 30 days edge
-
-export function applyPageCacheHeaders(response: Response): Response {
-	response.headers.set('Cache-Control', PAGE_CACHE_CONTROL);
-	return response;
-}
