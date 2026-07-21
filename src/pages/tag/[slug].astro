@@ -1,0 +1,26 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../layouts/Base.astro';
+import { getPieces } from '../../lib/data';
+import { getPiecesByTag } from '../../lib/facets';
+import { PAGE_CACHE_CONTROL } from '../../lib/cache';
+
+Astro.response.headers.set('Cache-Control', PAGE_CACHE_CONTROL);
+
+const { slug } = Astro.params;
+const { data } = await getPieces(env.ART_BUCKET);
+const pieces = slug ? getPiecesByTag(data, slug) : [];
+---
+
+<Base title={`#${slug}`}>
+	<h1>#{slug}</h1>
+	{pieces.length === 0 ? (
+		<p><em>No pieces tagged #{slug} yet.</em></p>
+	) : (
+		<ul>
+			{pieces.map((piece) => (
+				<li><a href={`/piece/${piece.id}`}>{piece.title}</a> — {piece.date}</li>
+			))}
+		</ul>
+	)}
+</Base>

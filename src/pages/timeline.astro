@@ -1,0 +1,62 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../layouts/Base.astro';
+import { getPieces } from '../lib/data';
+import { classifyMedium, getPiecesByDateDescending } from '../lib/facets';
+import { PAGE_CACHE_CONTROL } from '../lib/cache';
+
+Astro.response.headers.set('Cache-Control', PAGE_CACHE_CONTROL);
+
+const { data } = await getPieces(env.ART_BUCKET);
+const pieces = getPiecesByDateDescending(data);
+
+// Derived "phases" — no stored field, just a dry/wet-media density count per month.
+const byMonth = new Map<string, { dry: number; wet: number; unclassified: number }>();
+for (const piece of pieces) {
+	const month = piece.date.slice(0, 7); // "YYYY-MM"
+	const counts = byMonth.get(month) ?? { dry: 0, wet: 0, unclassified: 0 };
+	counts[classifyMedium(piece.tags)] += 1;
+	byMonth.set(month, counts);
+}
+const months = [...byMonth.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1));
+---
+
+<Base title="Timeline">
+	<h1>Timeline</h1>
+
+	{months.length > 0 && (
+		<section>
+			<h2>Phases</h2>
+			<div>
+				{months.map(([month, counts]) => {
+					const total = counts.dry + counts.wet + counts.unclassified;
+					const dryPct = (counts.dry / total) * 100;
+					const wetPct = (counts.wet / total) * 100;
+					return (
+						<div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.15rem;">
+							<span style="width:5rem; font-variant-numeric:tabular-nums;">{month}</span>
+							<div style="flex:1; display:flex; height:0.8rem; background:#eee;">
+								<div style={`width:${dryPct}%; background:#8884; `} title={`${counts.dry} dry-media`} />
+								<div style={`width:${wetPct}%; background:#48f8;`} title={`${counts.wet} wet-media`} />
+							</div>
+							<span>{total}</span>
+						</div>
+					);
+				})}
+			</div>
+		</section>
+	)}
+
+	<section>
+		<h2>All pieces</h2>
+		{pieces.length === 0 ? (
+			<p><em>Nothing uploaded yet.</em></p>
+		) : (
+			<ul>
+				{pieces.map((piece) => (
+					<li><a href={`/piece/${piece.id}`}>{piece.title}</a> — {piece.date}</li>
+				))}
+			</ul>
+		)}
+	</section>
+</Base>

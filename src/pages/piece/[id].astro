@@ -1,0 +1,45 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../layouts/Base.astro';
+import { getPieces } from '../../lib/data';
+import { getPieceById } from '../../lib/facets';
+import { PAGE_CACHE_CONTROL } from '../../lib/cache';
+
+Astro.response.headers.set('Cache-Control', PAGE_CACHE_CONTROL);
+
+const { id } = Astro.params;
+const { data } = await getPieces(env.ART_BUCKET);
+const piece = id ? getPieceById(data, id) : undefined;
+
+if (!piece) {
+	Astro.response.status = 404;
+}
+---
+
+<Base title={piece ? piece.title : 'Not found'}>
+	{piece ? (
+		<article>
+			<h1>{piece.title}</h1>
+			<p>
+				{piece.date} · {piece.stage} · {piece.location.placeName}
+			</p>
+			<p>
+				{piece.tags.map((tag) => (
+					<a href={`/tag/${tag}`}>#{tag}</a>
+				))}
+			</p>
+
+			<!-- Image rendering (thumbnail/medium/original via Cloudflare Image Transformations
+			     against the R2 originals) lands in Phase 3 — see docs/TODO.md. -->
+			<ul>
+				{piece.assets.map((asset) => (
+					<li>{asset.kind}{asset.caption ? ` — ${asset.caption}` : ''} ({asset.r2Key})</li>
+				))}
+			</ul>
+
+			{piece.notes && <p>{piece.notes}</p>}
+		</article>
+	) : (
+		<p>Piece not found.</p>
+	)}
+</Base>

@@ -25,8 +25,9 @@ favorites) **without a git-commit-and-redeploy step**.
   `stage` (finished vs. study/sketch) is the one dedicated single-select field, since it's a
   one-per-piece classification rather than an open multi-valued one. No draft/private state —
   uploading makes something immediately live.
-- **Cache invalidation**: no manual "which pages does this affect" computation — a short, uniform TTL
-  on all pages/data instead.
+- **Cache invalidation**: no manual "which pages does this affect" computation, and no reliance on
+  TTL expiry either — every admin write purges Cloudflare's entire edge cache for the zone. See
+  **Cache policy** below for why that's better than either alternative.
 - **No special-cased pages per asset kind** — one generic `/kind/<kind>` template, the same
   generalization already used for `/tag/<slug>`.
 
@@ -48,13 +49,14 @@ click-to-detail script.
 
 **Request walkthrough** (e.g. a viewer opening `/piece/042`):
 1. Cloudflare's anycast network routes to the nearest edge PoP.
-2. Cache hit (typical — see TTL policy below): served straight from cache, sub-10ms, Worker never
-   runs.
-3. Cache miss: Worker runs at that same nearby PoP, Astro renders the page from the current data in
-   R2, response goes out with `Cache-Control`, and gets cached at that PoP until the TTL expires.
+2. Cache hit (the common case — see **Cache policy** below): served straight from cache, sub-10ms,
+   Worker never runs at all.
+3. Cache miss (right after a purge, or the first-ever visitor from this region): Worker runs at
+   that same nearby PoP, Astro renders the page from the current data in R2, response goes out with
+   `Cache-Control`, and gets cached at that PoP.
 4. First view of any given page/image from a brand-new region pays one real round trip to origin;
-   Cloudflare's Tiered Cache reduces this further. Every subsequent view in that region, within the
-   TTL window, is edge-cached.
+   Cloudflare's Tiered Cache reduces this further. Every subsequent view in that region is
+   edge-cached until the next purge.
 
 ## Metadata storage: one JSON document in R2
 
@@ -116,17 +118,39 @@ difference, not an arbitrary one.
    entirely; old keys just stop being referenced.
 5. Writes the updated JSON back with a conditional PUT (`onlyIf: {etagMatches: ...}`) — if it fails
    because something wrote in between, reload and retry.
-6. Done. No cache purge step, and nothing that computes "which pages does this affect."
+6. Calls Cloudflare's Cache Purge API with `purge_everything: true` for the zone. No list of
+   "affected pages" to compute — a full purge is indiscriminate by design, which is what makes it
+   bug-free: there's nothing to forget.
 
-## Cache policy: short uniform TTL, not manual invalidation
+## Cache policy: purge-on-write, not TTL-driven expiry
 
-Every HTML page and the shared `data/pieces.json` fetch gets the same short `Cache-Control`
-(e.g. `max-age=60`) rather than a long cache with targeted purging. Since Astro renders each page
-fresh from whatever's currently in R2 on every cache miss, a uniform short TTL means every page,
-whether or not it was touched by the last edit, is guaranteed to reflect current data within 60
-seconds — automatically, with no list of "affected URLs" to compute and no risk of forgetting one.
-Images are unaffected by this policy — they stay long-cached/immutable, since they're already
-invalidation-free by virtue of versioned keys.
+Every HTML page and the shared `data/pieces.json` fetch carries the same `Cache-Control`:
+
+```
+Cache-Control: public, max-age=60, s-maxage=2592000
+```
+
+Two independent caches read this header, for different purposes:
+
+- **`s-maxage` (Cloudflare's edge, 30 days)**: this is what actually governs how often Astro's
+  render code reruns. It's long because *purge*, not expiry, is what keeps the edge fresh — step 6
+  of the write flow invalidates it the instant something changes. A missed/failed purge is
+  self-healing: the next edit purges everything again regardless of what it touched. In steady
+  state, Astro only reruns for two reasons: the request immediately after a purge (guaranteed
+  miss), or the first-ever visitor from a new edge region.
+- **`max-age` (the visitor's own browser, 1 minute)**: a server-side purge has zero effect on a
+  browser's already-cached local copy — there's no way to remotely invalidate that. Kept short
+  (rather than, say, an hour) mainly so the site owner can debug the live site without constantly
+  clearing their own browser cache; a re-ask this frequent is cheap regardless, since it's just
+  browser-to-edge traffic and the edge already has the fresh, purged-and-rerendered response cached
+  and ready — this value has no bearing on how often Astro's render code actually runs.
+
+Purging requires a Cloudflare API token (scoped to Cache Purge for this zone) and the zone ID,
+stored as Worker secrets — set up once, alongside the R2 bucket and Access application, when the
+site gets deployed to its own (sub)domain. Purge Everything is available on all Cloudflare plans
+including Free, rate-limited to 5 requests/minute (far above what occasional edits need), and
+propagates in well under a second. Images are unaffected by any of this — they stay long-cached/
+immutable, since they're already invalidation-free by virtue of versioned keys.
 
 ## Images: R2 + on-demand transforms
 

@@ -1,0 +1,32 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../layouts/Base.astro';
+import { getPieces } from '../lib/data';
+import { getPiecesByPlace } from '../lib/facets';
+import { PAGE_CACHE_CONTROL } from '../lib/cache';
+
+Astro.response.headers.set('Cache-Control', PAGE_CACHE_CONTROL);
+
+const { data } = await getPieces(env.ART_BUCKET);
+const byPlace = getPiecesByPlace(data);
+---
+
+<Base title="Browse by location">
+	<h1>Browse by location</h1>
+	<p><em>A plain, JS-free way to browse — see <a href="/map">the map</a> for the interactive version.</em></p>
+
+	{byPlace.size === 0 ? (
+		<p><em>Nothing uploaded yet.</em></p>
+	) : (
+		[...byPlace.entries()].map(([place, pieces]) => (
+			<section>
+				<h2>{place}</h2>
+				<ul>
+					{pieces.map((piece) => (
+						<li><a href={`/piece/${piece.id}`}>{piece.title}</a> — {piece.date}</li>
+					))}
+				</ul>
+			</section>
+		))
+	)}
+</Base>

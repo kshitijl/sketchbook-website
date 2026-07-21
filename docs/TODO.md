@@ -30,19 +30,28 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
 
 ## Phase 2 — Public read pages
 - [x] Shared layout (`src/layouts/Base.astro`) — nav, minimal CSS, no framework JS by default
-- [x] Uniform `Cache-Control: public, max-age=60` helper (`src/lib/cache.ts`), applied to the home
-      page — apply the same to every other page below as it's built
+- [x] Uniform `Cache-Control: public, max-age=60, s-maxage=2592000` helper (`src/lib/cache.ts`;
+      1min browser / 30 days edge, purge-driven not TTL-driven — see docs/architecture.md), applied
+      to the home page — apply the same to every other page below as it's built
 - [x] `/` home — favorites (by `favoriteRank`), recent pieces (by `date`); reads live from R2,
       verified against an empty bucket. Still needed: pinned quick-links content once any exist,
       phase density indicator
-- [ ] `/piece/[id]` — full detail: primary (`kind: final`) image, other assets, tags, date, notes
-- [ ] `/tag/[slug]` — all pieces containing that tag in `tags[]`
-- [ ] `/kind/[kind]` — all assets across all pieces matching that `assets[].kind`
-- [ ] `/timeline` — chronological list + the derived phase density chart
-- [ ] non-JS `/browse` — plain list grouped by `location.placeName`
-- [ ] Uniform `Cache-Control: max-age=60` (or similar) helper applied to every page response and to
-      the `data/pieces.json` fetch route used by client islands
-- [ ] 404 page
+- [x] `/piece/[id]` — full detail: tags, date, stage, location, notes, asset list (images pending
+      Phase 3 — currently lists kind/caption/r2Key as text). 404s (with `Astro.response.status`)
+      when the id doesn't exist.
+- [x] `/tag/[slug]` — all pieces containing that tag in `tags[]`
+- [x] `/kind/[kind]` — all assets across all pieces matching that `assets[].kind`; 404s on an
+      unrecognized kind
+- [x] `/timeline` — chronological list + a derived phase density bar (dry vs. wet media per month,
+      from `classifyMedium()` in `src/lib/facets.ts` — no manual phase tagging)
+- [x] non-JS `/browse` — plain list grouped by `location.placeName`
+- [x] Uniform `Cache-Control: public, max-age=60, s-maxage=2592000` applied to every page built so
+      far — still need to apply it to the `data/pieces.json` fetch route once the map island needs
+      it (Phase 4)
+- [ ] 404 page — currently just a 404 status + inline message on `/piece/[id]` and `/kind/[kind]`;
+      a real Astro `404.astro` catch-all for unmatched routes generally is still needed
+- [x] Verified all routes (200s, and 404s for a missing piece / bad kind) end-to-end under
+      `wrangler dev` against the real Workers runtime
 
 ## Phase 3 — Images
 - [ ] Note: the Cloudflare adapter auto-enables a Cloudflare *Images* binding for Astro's built-in
@@ -75,6 +84,11 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
 - [ ] `/admin` favorites reorder: numeric rank field per row, plain form submit
 - [ ] (Optional hardening) verify `Cf-Access-Authenticated-User-Email` header server-side in
       mutation handlers as defense-in-depth
+- [ ] Create a Cloudflare API token scoped to Cache Purge for this zone; store it and the zone ID
+      as Worker secrets (`wrangler secret put`)
+- [ ] After every successful admin write (post-conditional-PUT), call Cloudflare's purge API with
+      `purge_everything: true`. Treat as best-effort/fire-and-forget — log failures, don't fail the
+      write itself, since a missed purge self-heals on the next edit's purge anyway
 
 ## Phase 6 — Polish
 - [ ] Visual design pass: palette (pastels, purple/pink/red), typography, overall aesthetic
