@@ -4,11 +4,15 @@ interface Props {
 }
 const { title } = Astro.props;
 
-// Debug footer: if reloading the same URL keeps showing the same timestamp, that request was
+// Debug footer: if reloading the same URL keeps showing the same renderId, that request was
 // served from Cloudflare's edge cache, not re-rendered by the Worker. See docs/architecture.md's
-// Cache policy section. `cf` is a Cloudflare-specific Request extension — absent under plain
-// `astro dev`, present (real or emulated) under wrangler dev / deployed.
+// Cache policy section. renderId is a fresh crypto.randomUUID() generated only when this code
+// actually runs — unlike a timestamp, two genuinely separate renders can't collide on it, which
+// is what makes it a reliable signal for the automated caching check in docs/TODO.md. `cf` is a
+// Cloudflare-specific Request extension — absent under plain `astro dev`, present (real or
+// emulated) under wrangler dev / deployed.
 const renderedAt = new Date().toISOString();
+const renderId = crypto.randomUUID();
 const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 ---
 
@@ -212,6 +216,6 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 			<a href="/admin">Admin</a>
 		</nav>
 		<slot />
-		<footer class="debug">rendered {renderedAt} · edge: {colo}</footer>
+		<footer class="debug" data-render-id={renderId}>rendered {renderedAt} · edge: {colo} · id: {renderId}</footer>
 	</body>
 </html>

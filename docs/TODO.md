@@ -223,16 +223,35 @@ everything, keep it as simple as possible." Findings, all fixed:
       no font files), hot pink + purple as accents rather than the whole palette, light/dark
       variants preserved. `src/layouts/Base.astro` only — no page files needed changes since the
       theme is global. Further iteration likely once seen with real content/pieces.
-- [x] Debug footer on every page (`Base.astro`): render timestamp + Cloudflare edge colo
-      (`Astro.request.cf.colo`, falls back to `'local'` off-network), small muted monospace text
-      at the very bottom. Lets you visually confirm caching: if reloading the same URL keeps
-      showing the same timestamp, that request was served from the edge cache, not re-rendered.
-      The precise/authoritative signal is still the `CF-Cache-Status` response header (`HIT` vs
-      `MISS`/`EXPIRED`) via `curl -I` or browser devtools — the footer is a no-devtools-needed
-      sanity check, not a replacement for that. Verified locally: shows a real-looking colo value
-      even under plain `astro dev` (Astro's Cloudflare dev shim), timestamp changes on every
-      reload as expected (local dev never edge-caches — this check only means something once
-      deployed with the Cache Rule above in place).
+- [x] Debug footer on every page (`Base.astro`): render timestamp + a fresh `crypto.randomUUID()`
+      (`renderId`, also exposed as `data-render-id` on the `<footer>` for easy scripted parsing) +
+      Cloudflare edge colo (`Astro.request.cf.colo`, falls back to `'local'` off-network), small
+      muted monospace text at the very bottom. `renderId` exists specifically to make the
+      automated caching check below possible/reliable — a timestamp alone could in principle
+      collide at millisecond precision between two genuinely separate renders; a UUID practically
+      can't. The precise/authoritative signal for a human is still the `CF-Cache-Status` response
+      header (`HIT` vs `MISS`/`EXPIRED`) via `curl -I` or browser devtools — the footer is a
+      no-devtools-needed sanity check, not a replacement for that. Verified locally: valid UUID,
+      changes on every reload as expected (local dev never edge-caches — this only means something
+      once deployed with the Cache Rule above in place).
+- [ ] Automated caching-behavior check. **This is a post-deploy smoke test, not a CI/unit test** —
+      it depends on real Cloudflare edge behavior (the Cache Rule, `CF-Cache-Status`) that simply
+      doesn't exist under local dev, so it can only run against the live deployed site, and only
+      makes sense to run after deploying or after touching anything cache-related. No test
+      framework needed — a small standalone script using plain `fetch`, run manually:
+      1. `fetch` a page URL. Record its `data-render-id` (regex/parse out of the body) and body.
+      2. `fetch` the *exact same URL* again, immediately after.
+      3. Assert all three, on the second response:
+         - `CF-Cache-Status` header is `HIT` (not `MISS`/`EXPIRED`/`DYNAMIC`/`BYPASS`)
+         - its `data-render-id` is *identical* to the first response's
+         - its body is byte-for-byte identical to the first response's
+      If any of those three fail, the page re-rendered instead of being served from cache — the
+      Cache Rule isn't doing what it's supposed to, or something is preventing this URL from being
+      cache-eligible (e.g. a `Vary` header mismatch, a `Set-Cookie`, wrong content-type handling).
+      Worth running this check against one page of each kind (home, a `/piece/[id]`, `/map`, etc.)
+      since cacheability could in principle differ per route. Not worth automating into a
+      scheduled/CI job for a personal site at this scale — a manual script run occasionally is
+      enough insurance for what this is protecting against.
 - [ ] Confirm phase/density chart reads well on the timeline
 - [ ] Test the full admin flow on a phone (upload + retag + reorder favorites)
 - [ ] Deploy to production custom domain, confirm cold-region load behavior is acceptable
