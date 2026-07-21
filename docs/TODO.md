@@ -184,7 +184,9 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
       (`wrangler secret put`) — no code changes needed, both features activate automatically
 
 ## Phase 6 — Polish
-- [ ] Visual design pass: palette (pastels, purple/pink/red), typography, overall aesthetic
+- [x] Visual design first pass: pastel theme (`src/layouts/Base.astro`, global CSS custom
+      properties, light/dark variants) — palette/typography can still be refined further on
+      feedback, but the "ugly to test" gap is closed
 - [ ] Confirm phase/density chart reads well on the timeline
 - [ ] Test the full admin flow on a phone (upload + retag + reorder favorites)
 - [ ] Deploy to production custom domain, confirm cold-region load behavior is acceptable
