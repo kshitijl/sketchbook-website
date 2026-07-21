@@ -47,3 +47,27 @@ export async function savePieces(
 	}
 	return { etag: result.httpEtag };
 }
+
+/**
+ * Read-modify-write with automatic retry on conflict — the shared pattern every admin write
+ * (new piece, edit, favorites reorder) needs. `mutate` edits `data` in place.
+ */
+export async function updatePieces(
+	bucket: R2Bucket,
+	mutate: (data: PiecesData) => void,
+	attempts = 3
+): Promise<PiecesData> {
+	for (let attempt = 1; attempt <= attempts; attempt++) {
+		const { data, etag } = await getPieces(bucket);
+		mutate(data);
+		try {
+			await savePieces(bucket, data, etag);
+			return data;
+		} catch (err) {
+			if (!(err instanceof ConflictError) || attempt === attempts) {
+				throw err;
+			}
+		}
+	}
+	throw new ConflictError();
+}

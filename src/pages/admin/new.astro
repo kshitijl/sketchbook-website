@@ -1,0 +1,152 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../layouts/Base.astro';
+import { getPieces, updatePieces } from '../../lib/data';
+import { generateAssetId, generatePieceId, buildAssetKey } from '../../lib/ids';
+import { ASSET_KIND_FIELDS } from '../../lib/assetKinds';
+import type { Asset, Piece, Stage } from '../../lib/types';
+
+Astro.response.headers.set('Cache-Control', 'no-store');
+
+const errors: string[] = [];
+let values = {
+	title: '',
+	date: '',
+	stage: 'finished' as Stage,
+	lat: '',
+	lng: '',
+	placeName: '',
+	tags: '',
+	notes: ''
+};
+
+if (Astro.request.method === 'POST') {
+	const formData = await Astro.request.formData();
+
+	values = {
+		title: String(formData.get('title') ?? '').trim(),
+		date: String(formData.get('date') ?? '').trim(),
+		stage: formData.get('stage') === 'study' ? 'study' : 'finished',
+		lat: String(formData.get('lat') ?? '').trim(),
+		lng: String(formData.get('lng') ?? '').trim(),
+		placeName: String(formData.get('placeName') ?? '').trim(),
+		tags: String(formData.get('tags') ?? '').trim(),
+		notes: String(formData.get('notes') ?? '').trim()
+	};
+
+	const lat = Number(values.lat);
+	const lng = Number(values.lng);
+
+	if (!values.title) errors.push('Title is required.');
+	if (!values.date) errors.push('Date is required.');
+	if (!values.placeName) errors.push('Place name is required.');
+	if (values.lat === '' || Number.isNaN(lat)) errors.push('Latitude must be a number.');
+	if (values.lng === '' || Number.isNaN(lng)) errors.push('Longitude must be a number.');
+
+	const finalField = ASSET_KIND_FIELDS.find((f) => f.kind === 'final')!;
+	const finalFile = formData.get(finalField.field);
+	if (!(finalFile instanceof File) || finalFile.size === 0) {
+		errors.push('A final image is required.');
+	}
+
+	if (errors.length === 0) {
+		const tags = values.tags
+			.split(',')
+			.map((t) => t.trim().toLowerCase())
+			.filter(Boolean);
+
+		// Id generation only needs to peek at current ids, not hold a lock — the tiny residual
+		// risk of a collision with a concurrent write is an acceptable trade for a single editor.
+		const { data: currentData } = await getPieces(env.ART_BUCKET);
+		const existingIds = new Set(currentData.pieces.map((p) => p.id));
+		const newId = generatePieceId(values.title, values.date, existingIds);
+
+		// Upload images under real, versioned keys before touching pieces.json — no placeholder
+		// values needed since the id is already known.
+		const assets: Asset[] = [];
+		const existingAssetIds = new Set<string>();
+		for (const { kind, field } of ASSET_KIND_FIELDS) {
+			const file = formData.get(field);
+			if (file instanceof File && file.size > 0) {
+				const assetId = generateAssetId(existingAssetIds);
+				existingAssetIds.add(assetId);
+				const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
+				const r2Key = buildAssetKey(newId, assetId, ext);
+				await env.ART_BUCKET.put(r2Key, await file.arrayBuffer(), {
+					httpMetadata: { contentType: file.type || 'application/octet-stream' }
+				});
+				assets.push({ id: assetId, kind, r2Key, width: 0, height: 0 });
+			}
+		}
+
+		const piece: Piece = {
+			id: newId,
+			title: values.title,
+			date: values.date,
+			stage: values.stage,
+			location: { lat, lng, placeName: values.placeName },
+			tags,
+			notes: values.notes,
+			favoriteRank: null,
+			assets
+		};
+
+		await updatePieces(env.ART_BUCKET, (data) => {
+			data.pieces.push(piece);
+		});
+
+		return Astro.redirect(`/piece/${newId}`);
+	}
+}
+---
+
+<Base title="Add a new piece">
+	<h1>Add a new piece</h1>
+
+	{errors.length > 0 && (
+		<ul style="color:#b00;">
+			{errors.map((error) => (
+				<li>{error}</li>
+			))}
+		</ul>
+	)}
+
+	<form method="POST" enctype="multipart/form-data">
+		<p>
+			<label>Title<br /><input type="text" name="title" value={values.title} required /></label>
+		</p>
+		<p>
+			<label>Date<br /><input type="date" name="date" value={values.date} required /></label>
+		</p>
+		<p>
+			<label>Stage<br />
+				<select name="stage">
+					<option value="finished" selected={values.stage === 'finished'}>Finished</option>
+					<option value="study" selected={values.stage === 'study'}>Study / sketch</option>
+				</select>
+			</label>
+		</p>
+		<p>
+			<label>Latitude<br /><input type="number" step="any" name="lat" value={values.lat} required /></label>
+			&nbsp;
+			<label>Longitude<br /><input type="number" step="any" name="lng" value={values.lng} required /></label>
+		</p>
+		<p>
+			<label>Place name<br /><input type="text" name="placeName" value={values.placeName} required /></label>
+		</p>
+		<p>
+			<label>Tags (comma-separated)<br /><input type="text" name="tags" value={values.tags} /></label>
+		</p>
+		<p>
+			<label>Notes<br /><textarea name="notes" rows="4" cols="50">{values.notes}</textarea></label>
+		</p>
+
+		{ASSET_KIND_FIELDS.map(({ field, label, required }) => (
+			<p>
+				<label>{label}{required ? ' (required)' : ''}<br /><input type="file" name={field} accept="image/*" required={required} /></label>
+			</p>
+		))}
+
+		<p><button type="submit">Save</button></p>
+	</form>
+</Base>

@@ -1,0 +1,30 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../layouts/Base.astro';
+import { getPieces } from '../../lib/data';
+import { getPiecesByDateDescending } from '../../lib/facets';
+
+// Not cached: admin is low-traffic and always wants current data. Also outside the purge-on-write
+// policy that governs public pages (see docs/architecture.md).
+Astro.response.headers.set('Cache-Control', 'no-store');
+
+const { data } = await getPieces(env.ART_BUCKET);
+const pieces = getPiecesByDateDescending(data);
+---
+
+<Base title="Admin">
+	<h1>Admin</h1>
+	<p><a href="/admin/new">+ Add a new piece</a></p>
+
+	{pieces.length === 0 ? (
+		<p><em>Nothing uploaded yet.</em></p>
+	) : (
+		<ul>
+			{pieces.map((piece) => (
+				<li>
+					<a href={`/piece/${piece.id}`}>{piece.title}</a> — {piece.date}
+				</li>
+			))}
+		</ul>
+	)}
+</Base>

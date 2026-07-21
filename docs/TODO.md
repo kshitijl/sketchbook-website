@@ -75,12 +75,23 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
       `/piece/[id]` Astro template's content, intentionally duplicated per the architecture doc)
 
 ## Phase 5 — Admin
-- [ ] Cloudflare Zero Trust: create Access application covering `/admin/*` and `/admin/api/*`
+- [ ] Cloudflare Zero Trust: create Access application covering `/admin/*` and `/admin/api/*` — not
+      done yet, requires the owner's Cloudflare login. Until then, `/admin` is open in every
+      environment, including local dev (Access isn't emulated locally at all — it's an edge-only
+      product, not a binding — so this is expected, not a bug)
 - [ ] Configure Google as the identity provider (OAuth client in Google Cloud Console, wired into
       Cloudflare Zero Trust dashboard)
 - [ ] Access policy: allow only the owner's email
-- [ ] `/admin` upload form: image file(s) + title/date/stage/location/tags/notes fields
-- [ ] `/admin` edit form: load existing piece, edit any field, add/replace assets
+- [x] `/admin` index (`src/pages/admin/index.astro`) — lists existing pieces, links to `/admin/new`
+- [x] `/admin/new` upload form (`src/pages/admin/new.astro`) — title/date/stage/location/tags/notes
+      + up to 5 image fields (one per asset kind, `final` required). Validates required fields
+      (re-renders the form with errors, doesn't lose entered values on failure), generates the
+      piece id and asset R2 keys (`src/lib/ids.ts`), uploads images to R2, then writes the piece via
+      `updatePieces()` (`src/lib/data.ts` — the shared read-modify-write-with-retry helper other
+      admin writes will reuse) and redirects to `/piece/<id>`. Verified end-to-end against local R2
+      emulation: successful submission, redirect, the new piece appearing on home/timeline/tag
+      pages, and validation errors on a bad submission.
+- [ ] `/admin` edit form: load existing piece, edit any field, add/replace assets, delete a piece
 - [ ] `/admin` favorites reorder: numeric rank field per row, plain form submit
 - [ ] (Optional hardening) verify `Cf-Access-Authenticated-User-Email` header server-side in
       mutation handlers as defense-in-depth
