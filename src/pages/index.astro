@@ -3,7 +3,7 @@ import { env } from 'cloudflare:workers';
 import Base from '../layouts/Base.astro';
 import PieceList from '../components/PieceList.astro';
 import { getPieces } from '../lib/data';
-import { getPaintingStats, getRandomPieces } from '../lib/facets';
+import { getPaintingStats, getPiecesByDateDescending, getRandomPieces } from '../lib/facets';
 import { PAGE_CACHE_CONTROL } from '../lib/cache';
 import type { Piece } from '../lib/types';
 
@@ -16,7 +16,7 @@ const favorites = data.pieces
 	.filter((p): p is Piece & { favoriteRank: number } => p.favoriteRank !== null)
 	.sort((a, b) => a.favoriteRank - b.favoriteRank);
 
-const recent = [...data.pieces].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 12);
+const recent = getPiecesByDateDescending(data).slice(0, 12);
 // Picked at render time, which — per the purge-on-write cache policy — only happens right after
 // an edit or for the first visitor at a given edge location. So this is "a random pick that
 // changes whenever you edit something," not "re-randomized on every single visit." That's an

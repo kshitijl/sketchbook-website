@@ -3,6 +3,7 @@ import { env } from 'cloudflare:workers';
 import Base from '../../layouts/Base.astro';
 import PieceThumb from '../../components/PieceThumb.astro';
 import { getPieces, updatePieces } from '../../lib/data';
+import { compareDatesDescending } from '../../lib/facets';
 import { purgeEverything } from '../../lib/purge';
 import { isAuthorizedAdminRequest } from '../../lib/adminGuard';
 
@@ -47,7 +48,7 @@ const pieces = [...data.pieces].sort((a, b) => {
 	const ar = a.favoriteRank ?? Infinity;
 	const br = b.favoriteRank ?? Infinity;
 	if (ar !== br) return ar - br;
-	return a.date < b.date ? 1 : -1;
+	return compareDatesDescending(a.date, b.date);
 });
 ---
 

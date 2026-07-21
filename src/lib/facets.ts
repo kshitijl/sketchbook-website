@@ -4,6 +4,14 @@ export function getPieceById(data: PiecesData, id: string): Piece | undefined {
 	return data.pieces.find((p) => p.id === id);
 }
 
+/** Newest-first comparator for ISO date strings ("YYYY-MM-DD"). Must return 0 on equal dates —
+ * a comparator that always returns -1/1 for equal inputs is inconsistent and can sort equal-date
+ * pieces unpredictably depending on the sort algorithm, which is exactly the bug this replaced. */
+export function compareDatesDescending(a: string, b: string): number {
+	if (a === b) return 0;
+	return a < b ? 1 : -1;
+}
+
 /** The image to show as a piece's thumbnail/cover — the final piece if there is one, else
  * whatever's first. */
 export function getPrimaryAsset(piece: Piece): Asset | undefined {
@@ -19,7 +27,7 @@ export function orderAssetsFinalFirst(assets: Asset[]): Asset[] {
 export function getPiecesByTag(data: PiecesData, slug: string): Piece[] {
 	return data.pieces
 		.filter((p) => p.tags.includes(slug))
-		.sort((a, b) => (a.date < b.date ? 1 : -1));
+		.sort((a, b) => compareDatesDescending(a.date, b.date));
 }
 
 export interface AssetWithPiece {
@@ -36,11 +44,11 @@ export function getAssetsByKind(data: PiecesData, kind: AssetKind): AssetWithPie
 			}
 		}
 	}
-	return results.sort((a, b) => (a.piece.date < b.piece.date ? 1 : -1));
+	return results.sort((a, b) => compareDatesDescending(a.piece.date, b.piece.date));
 }
 
 export function getPiecesByDateDescending(data: PiecesData): Piece[] {
-	return [...data.pieces].sort((a, b) => (a.date < b.date ? 1 : -1));
+	return [...data.pieces].sort((a, b) => compareDatesDescending(a.date, b.date));
 }
 
 /** A "rediscover something old" pick for the home page — random, not recent/favorite. */
@@ -122,7 +130,11 @@ export interface PaintingStats {
 
 /** Powers the "N paintings this year, M more to the next hundred" landing-page counter. */
 export function getPaintingStats(data: PiecesData, now: Date): PaintingStats {
-	const year = now.getFullYear();
+	// getUTCFullYear(), not getFullYear(): piece.date is a plain "YYYY-MM-DD" string with no
+	// timezone of its own, and Workers run in UTC — using local-time getFullYear() here made this
+	// dependent on the executing environment's timezone (caught by a test run somewhere west of
+	// UTC, where midnight UTC on Jan 1 is still "last year" locally).
+	const year = now.getUTCFullYear();
 	const paintings = data.pieces.filter(isPainting);
 	const lifetimeCount = paintings.length;
 	const yearCount = paintings.filter((p) => p.date.startsWith(String(year))).length;

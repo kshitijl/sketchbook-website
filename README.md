@@ -11,4 +11,6 @@ design and `docs/TODO.md` for the build plan.
 | `npm run dev`             | Start local dev server at `localhost:4321`                     |
 | `npm run build`           | Build the production Worker to `./dist/`                       |
 | `npm run generate-types`  | Regenerate `worker-configuration.d.ts` from `wrangler.jsonc`    |
+| `npm test`                | Run the unit test suite (Vitest)                                |
 | `npx wrangler dev`        | Run the built Worker under the real Workers runtime locally    |
+| `node scripts/check-caching.mjs <url>` | Post-deploy caching smoke test — see docs/TODO.md |

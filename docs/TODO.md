@@ -241,6 +241,44 @@ everything, keep it as simple as possible." Findings, all fixed:
       entirely (broken in dark mode). Wired the variable in and removed the hardcoded color.
 - [x] Fixed a stale comment in `assetKinds.ts` referencing the edit form as not-yet-built
 
+## Automated test suite (2026-07-21)
+Added Vitest (`npm test`) and unit-tested every pure function in `src/lib/` — 57 tests, all
+passing. Writing these actually caught two real, live bugs (not hypothetical):
+- [x] **Inconsistent sort comparator, duplicated 5 times**: `(a, b) => (a.date < b.date ? 1 : -1)`
+      returns `-1` for *equal* dates regardless of argument order, which is an invalid/inconsistent
+      comparator — it can sort same-date pieces unpredictably depending on the sort algorithm.
+      Found via a test asserting original relative order should be preserved for equal-date items.
+      Fixed once as `compareDatesDescending()` in `src/lib/facets.ts` (returns `0` on equal dates)
+      and used everywhere the old inline version was duplicated: `getPiecesByTag`,
+      `getAssetsByKind`, `getPiecesByDateDescending`, `index.astro`'s "Recent" list (which was
+      reimplementing `getPiecesByDateDescending` inline instead of calling it — now just calls it),
+      and `admin/favorites.astro`'s date tiebreaker.
+- [x] **Timezone-dependent painting count**: `getPaintingStats()` used `now.getFullYear()` (local
+      time) instead of `now.getUTCFullYear()`, so "paintings this year" would use the wrong year
+      depending on the executing machine's timezone relative to UTC — caught immediately by a test
+      using a UTC midnight boundary date, which failed in this environment's local timezone.
+      `piece.date` is a plain "YYYY-MM-DD" string with no timezone of its own and Workers run in
+      UTC, so UTC is the only timezone-independent, consistent choice here. Fixed.
+- [x] Test files, one per `src/lib/` module with real logic: `ids.test.ts`, `facets.test.ts`,
+      `imageDimensions.test.ts` (built minimal-but-real PNG/JPEG byte buffers to test the header
+      parser, including malformed/truncated/unrecognized-format edge cases), and `data.test.ts`
+      (an in-memory mock R2Bucket exercising the *actual* conditional-write/retry logic — including
+      the exact ETag-format distinction that caused the real crash fixed earlier this session, and
+      a genuine concurrent-write-then-retry scenario, not just the happy path).
+- [ ] Not unit-tested (deliberately, not an oversight): anything that's mostly Astro template
+      markup/routing (the `.astro` page files themselves), the two client-side scripts
+      (`pieceForm.ts`, `mapPage.ts` — DOM-dependent, would need a browser-like test environment to
+      be worth it at this scale), and the admin write flows end-to-end (covered by manual
+      curl-based verification during earlier development instead — see git history).
+- [x] `scripts/check-caching.mjs` — see the Automated caching-behavior check entry in Phase 6
+      below. Separate from the Vitest suite on purpose (needs a live deployed URL, not something
+      `npm test` can exercise).
+- Ran `npm audit`: 5 high-severity findings, all transitively from `sharp`/libvips inside
+  `miniflare` (wrangler's local dev/emulation tooling) — a dev-only dependency chain that never
+  ships in the deployed Worker (Workers run in an isolate, not Node; nothing native gets bundled).
+  Deliberately not forcing `npm audit fix --force` (would downgrade wrangler to 4.15.2, a breaking
+  change) for a vulnerability with no production exposure.
+
 ## Phase 6 — Polish
 - [x] Visual design, redone per moodboard direction (2026-07-21): "a weird personal art archive
       that feels like a beautifully designed Mac application" — grid/panel/bordered brutalist-UI
@@ -261,24 +299,19 @@ everything, keep it as simple as possible." Findings, all fixed:
       no-devtools-needed sanity check, not a replacement for that. Verified locally: valid UUID,
       changes on every reload as expected (local dev never edge-caches — this only means something
       once deployed with the Cache Rule above in place).
-- [ ] Automated caching-behavior check. **This is a post-deploy smoke test, not a CI/unit test** —
-      it depends on real Cloudflare edge behavior (the Cache Rule, `CF-Cache-Status`) that simply
-      doesn't exist under local dev, so it can only run against the live deployed site, and only
-      makes sense to run after deploying or after touching anything cache-related. No test
-      framework needed — a small standalone script using plain `fetch`, run manually:
-      1. `fetch` a page URL. Record its `data-render-id` (regex/parse out of the body) and body.
-      2. `fetch` the *exact same URL* again, immediately after.
-      3. Assert all three, on the second response:
-         - `CF-Cache-Status` header is `HIT` (not `MISS`/`EXPIRED`/`DYNAMIC`/`BYPASS`)
-         - its `data-render-id` is *identical* to the first response's
-         - its body is byte-for-byte identical to the first response's
-      If any of those three fail, the page re-rendered instead of being served from cache — the
-      Cache Rule isn't doing what it's supposed to, or something is preventing this URL from being
-      cache-eligible (e.g. a `Vary` header mismatch, a `Set-Cookie`, wrong content-type handling).
-      Worth running this check against one page of each kind (home, a `/piece/[id]`, `/map`, etc.)
-      since cacheability could in principle differ per route. Not worth automating into a
-      scheduled/CI job for a personal site at this scale — a manual script run occasionally is
-      enough insurance for what this is protecting against.
+- [x] Automated caching-behavior check — `scripts/check-caching.mjs` (plain Node `fetch`, no test
+      framework, no dependency). **This is a post-deploy smoke test, not a CI/unit test** — it
+      depends on real Cloudflare edge behavior (the Cache Rule, `CF-Cache-Status`) that simply
+      doesn't exist under local dev, so it can only mean something against the live deployed site.
+      Usage: `node scripts/check-caching.mjs https://klauria.art`. For each of `/`, `/timeline`,
+      `/browse`, `/map`: fetches it twice back to back and asserts, on the second response,
+      `CF-Cache-Status: HIT`, an identical `data-render-id`, and a byte-identical body. Verified
+      the script itself works correctly by running it against the current `workers.dev` deploy —
+      it correctly reports FAIL on every path (no `CF-Cache-Status` header at all, render id
+      changes every time), matching the already-confirmed fact that Cache Rules don't apply there.
+      Expect all-PASS once the domain move + Cache Rule are done — that's what running it next is
+      for. Only worth covering one page per *kind* (not every `/piece/[id]`) since cacheability
+      could in principle differ per route type, not per instance of the same route.
 - [ ] Confirm phase/density chart reads well on the timeline
 - [ ] Test the full admin flow on a phone (upload + retag + reorder favorites)
 - [ ] Deploy to production custom domain, confirm cold-region load behavior is acceptable
