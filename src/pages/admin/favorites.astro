@@ -1,0 +1,73 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../layouts/Base.astro';
+import PieceThumb from '../../components/PieceThumb.astro';
+import { getPieces, updatePieces } from '../../lib/data';
+
+Astro.response.headers.set('Cache-Control', 'no-store');
+
+if (Astro.request.method === 'POST') {
+	const formData = await Astro.request.formData();
+	const entries: { id: string; rank: number }[] = [];
+	for (const [key, value] of formData.entries()) {
+		if (key.startsWith('rank_')) {
+			const raw = String(value).trim();
+			if (raw !== '') {
+				const num = Number(raw);
+				if (!Number.isNaN(num)) {
+					entries.push({ id: key.slice('rank_'.length), rank: num });
+				}
+			}
+		}
+	}
+	// Only the relative order of entered numbers matters — reassign clean, gap-free 1..N ranks
+	// rather than requiring the admin to type perfectly sequential numbers themselves.
+	entries.sort((a, b) => a.rank - b.rank);
+	const orderedIds = entries.map((e) => e.id);
+
+	await updatePieces(env.ART_BUCKET, (data) => {
+		for (const piece of data.pieces) {
+			const idx = orderedIds.indexOf(piece.id);
+			piece.favoriteRank = idx === -1 ? null : idx + 1;
+		}
+	});
+
+	return Astro.redirect('/admin/favorites');
+}
+
+const { data } = await getPieces(env.ART_BUCKET);
+const pieces = [...data.pieces].sort((a, b) => {
+	const ar = a.favoriteRank ?? Infinity;
+	const br = b.favoriteRank ?? Infinity;
+	if (ar !== br) return ar - br;
+	return a.date < b.date ? 1 : -1;
+});
+---
+
+<Base title="Reorder favorites">
+	<h1>Reorder favorites</h1>
+	<p>
+		<em>
+			Give any pieces a rank (1 = top favorite). Leave blank to not be a favorite. Numbers only
+			need to be in the right relative order — they get cleaned up into 1..N automatically.
+		</em>
+	</p>
+
+	{pieces.length === 0 ? (
+		<p><em>Nothing uploaded yet.</em></p>
+	) : (
+		<form method="POST">
+			<ul style="list-style:none; padding:0;">
+				{pieces.map((piece) => (
+					<li style="margin-bottom:0.5rem; display:flex; align-items:center; gap:0.5rem;">
+						<input type="number" name={`rank_${piece.id}`} value={piece.favoriteRank ?? ''} style="width:4rem;" />
+						<PieceThumb piece={piece} size={48} />
+						<a href={`/piece/${piece.id}`}>{piece.title}</a>
+						<span style="color:var(--text-muted);">— {piece.date}</span>
+					</li>
+				))}
+			</ul>
+			<button type="submit">Save order</button>
+		</form>
+	)}
+</Base>

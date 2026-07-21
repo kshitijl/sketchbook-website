@@ -153,7 +153,11 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
       time — only difference is the edit form pre-fills values and doesn't auto-fire geolocation.
       Verified end-to-end: pre-filled fields, editing metadata, adding an asset kind that didn't
       exist yet, removing one, and deleting the piece entirely.
-- [ ] `/admin` favorites reorder: numeric rank field per row, plain form submit
+- [x] `/admin/favorites` — numeric rank field per row (blank = not a favorite), plain form submit.
+      Entered numbers only need the right relative order — submit reassigns clean, gap-free 1..N
+      ranks rather than requiring perfectly sequential input. Verified end-to-end: setting ranks,
+      leaving one blank, and confirming the home page's Favorites section reflects the new order
+      and excludes the blank one.
 - [ ] (Optional hardening) verify `Cf-Access-Authenticated-User-Email` header server-side in
       mutation handlers as defense-in-depth
 - [ ] Create a Cloudflare API token scoped to Cache Purge for this zone; store it and the zone ID
