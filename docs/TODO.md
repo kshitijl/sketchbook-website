@@ -38,6 +38,16 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
       phase density indicator
 - [ ] Home page: also show a small section of randomly-picked pieces (not just favorites/recent) —
       a "rediscover something old" section
+- [x] "Paintings done" counter (meant to be motivating: "175 lifetime, 25 this year, 75 more to
+      100"): `isPainting()` and `getPaintingStats()` in `src/lib/facets.ts`, rendered as a section
+      on the home page. **Working definition of "painting", not yet confirmed with the artist**:
+      a *finished* piece tagged with at least one wet medium (watercolor/gouache/oil/acrylic) —
+      checked directly against tags (not via the stricter `classifyMedium()`) so a mixed piece
+      like ink+watercolor still counts. Revisit this definition if it doesn't match how the artist
+      actually thinks about "a painting" (e.g. maybe studies should count, maybe the medium list
+      is wrong, maybe it should be manually flagged per piece instead of inferred from tags).
+      Milestone is currently always "next multiple of 100 this year" — may want lifetime
+      milestones too, or a configurable target.
 - [x] `/piece/[id]` — full detail: tags, date, stage, location, notes, real images (final piece
       first, then the rest), an Edit link. 404s (with `Astro.response.status`) when the id doesn't
       exist.
