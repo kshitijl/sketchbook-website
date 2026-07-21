@@ -6,13 +6,17 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
 - [x] `npm create astro@latest` (TypeScript, minimal template)
 - [x] Add `@astrojs/cloudflare` adapter, set `output: "server"` in `astro.config.mjs`
 - [x] Add `wrangler.jsonc` with the Worker name, compatibility date, and R2 binding (`ART_BUCKET`)
-- [ ] Create the *real* R2 bucket in Cloudflare (`wrangler r2 bucket create`) — requires the owner's
-      Cloudflare login, not done yet. Local dev/build use wrangler's local R2 emulation and don't
-      need this.
+- [x] Created the real R2 bucket (`31-art-website-data`) via `wrangler r2 bucket create` and
+      deployed via `wrangler deploy` — **live at https://31-art-website.klauria.workers.dev**
+      (2026-07-21). Smoke-tested all routes (200s, 404 on an unknown path) against production.
 - [x] Confirm local dev works with bindings: verified under both `astro dev` and `wrangler dev`
       (real Workers runtime) against the local-emulated `ART_BUCKET`
 - [x] Add `.gitignore` for `node_modules`, `.astro`, `dist`, `.wrangler`
-- [ ] Decide and record the production custom domain / route
+- [ ] Decide and record the production custom domain / route. **Confirmed by observation, not just
+      theory**: the deployed `workers.dev` URL has no `CF-Cache-Status` header at all — Cache
+      Rules genuinely don't apply there (it's not a zone in this account), so the entire
+      purge-on-write/edge-cache design cannot take effect until this site is on a real (sub)domain.
+      `workers.dev` is fine for functional testing in the meantime, just not for verifying caching.
 
 ## Phase 1 — Data layer
 - [x] Define the piece record TypeScript type (`stage`, `location`, `tags`, `notes`, `favoriteRank`,
