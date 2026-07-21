@@ -81,6 +81,16 @@ if (piece && Astro.request.method === 'POST') {
 	if (values.lat === '' || Number.isNaN(lat)) errors.push('Location is required.');
 	if (values.lng === '' || Number.isNaN(lng)) errors.push('Location is required.');
 
+	// The <input accept="image/*"> is only a client-side hint, not a real restriction — check
+	// every provided file server-side too, so a wrong file type fails clearly instead of silently
+	// uploading something an <img> tag can't display.
+	for (const { field, label } of ASSET_KIND_FIELDS) {
+		const file = formData.get(field);
+		if (file instanceof File && file.size > 0 && !file.type.startsWith('image/')) {
+			errors.push(`${label}: "${file.name}" doesn't look like an image (${file.type || 'unknown type'}).`);
+		}
+	}
+
 	if (errors.length === 0) {
 		const tags = values.tags
 			.split(',')

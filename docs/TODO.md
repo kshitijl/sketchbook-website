@@ -324,6 +324,24 @@ passing. Writing these actually caught two real, live bugs (not hypothetical):
       could in principle differ per route type, not per instance of the same route.
 - [ ] Confirm phase/density chart reads well on the timeline
 - [ ] Test the full admin flow on a phone (upload + retag + reorder favorites)
+  - [ ] **Specifically check HEIC**: iPhones often save/share photos as HEIC by default. Our
+        `getImageDimensions()` (src/lib/imageDimensions.ts) only parses PNG/JPEG — a HEIC upload
+        wouldn't crash (dimensions just silently stay unset, already handled), but the bigger risk
+        is that HEIC has poor `<img>` support outside Safari, so a HEIC-uploaded piece might not
+        display for family/friends on Chrome/Firefox/Android. Whether this actually bites depends
+        on whatever app/share-sheet gets the photo onto the device used for the admin form (iOS
+        often auto-converts to JPEG in many sharing paths, but not always) — worth deliberately
+        testing with a real HEIC file before assuming it's fine. If it is a problem: either always
+        export/convert to JPEG before uploading, or add server-side transcoding (a real chunk of
+        work — HEIC decoding is nontrivial, would likely need a WASM library or the Cloudflare
+        Images product rather than anything hand-rolled).
+- [x] **Gap found on review**: file uploads only checked `size > 0`, never validated that the file
+      was actually an image — the `accept="image/*"` on the `<input>` is just a client-side hint,
+      trivially bypassed (or just the wrong file picked by accident). Added a server-side check in
+      both the new-piece and edit forms: any provided file whose `type` doesn't start with
+      `image/` now fails validation with a clear message naming the field and the file's actual
+      type, instead of silently uploading something an `<img>` tag can't render. Verified locally
+      with a `.txt` file: rejected with a clear error, nothing written to R2.
 - [ ] Deploy to production custom domain, confirm cold-region load behavior is acceptable
 - [ ] Sanity-check Tiered Cache is enabled
 
