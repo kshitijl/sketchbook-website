@@ -1,6 +1,7 @@
 ---
 import { env } from 'cloudflare:workers';
 import Base from '../../layouts/Base.astro';
+import PieceThumb from '../../components/PieceThumb.astro';
 import { getPieces } from '../../lib/data';
 import { getPiecesByDateDescending } from '../../lib/facets';
 
@@ -19,10 +20,12 @@ const pieces = getPiecesByDateDescending(data);
 	{pieces.length === 0 ? (
 		<p><em>Nothing uploaded yet.</em></p>
 	) : (
-		<ul>
+		<ul style="list-style:none; padding:0;">
 			{pieces.map((piece) => (
-				<li>
+				<li style="margin-bottom:0.5rem;">
+					<PieceThumb piece={piece} />
 					<a href={`/piece/${piece.id}`}>{piece.title}</a> — {piece.date}
+					{' '}(<a href={`/admin/edit/${piece.id}`}>edit</a>)
 				</li>
 			))}
 		</ul>

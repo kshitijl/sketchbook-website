@@ -1,0 +1,259 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../../layouts/Base.astro';
+import { getPieces, updatePieces } from '../../../lib/data';
+import { getPieceById, getTagFrequency } from '../../../lib/facets';
+import { generateAssetId, buildAssetKey } from '../../../lib/ids';
+import { ASSET_KIND_FIELDS } from '../../../lib/assetKinds';
+import { imageUrl } from '../../../lib/images';
+import type { AssetKind, Stage } from '../../../lib/types';
+
+Astro.response.headers.set('Cache-Control', 'no-store');
+
+const { id } = Astro.params;
+const { data } = await getPieces(env.ART_BUCKET);
+const piece = id ? getPieceById(data, id) : undefined;
+
+if (!piece) {
+	Astro.response.status = 404;
+}
+
+const tagFrequency = piece ? getTagFrequency(data) : [];
+
+const errors: string[] = [];
+let values = piece
+	? {
+			title: piece.title,
+			date: piece.date,
+			stage: piece.stage,
+			lat: String(piece.location.lat),
+			lng: String(piece.location.lng),
+			placeName: piece.location.placeName,
+			tags: piece.tags.join(', '),
+			notes: piece.notes
+		}
+	: {
+			title: '',
+			date: '',
+			stage: 'finished' as Stage,
+			lat: '',
+			lng: '',
+			placeName: '',
+			tags: '',
+			notes: ''
+		};
+
+if (piece && Astro.request.method === 'POST') {
+	const formData = await Astro.request.formData();
+
+	if (formData.get('intent') === 'delete') {
+		await updatePieces(env.ART_BUCKET, (d) => {
+			d.pieces = d.pieces.filter((p) => p.id !== piece.id);
+		});
+		return Astro.redirect('/admin');
+	}
+
+	values = {
+		title: String(formData.get('title') ?? '').trim(),
+		date: String(formData.get('date') ?? '').trim(),
+		stage: formData.get('stage') === 'study' ? 'study' : 'finished',
+		lat: String(formData.get('lat') ?? '').trim(),
+		lng: String(formData.get('lng') ?? '').trim(),
+		placeName: String(formData.get('placeName') ?? '').trim(),
+		tags: String(formData.get('tags') ?? '').trim(),
+		notes: String(formData.get('notes') ?? '').trim()
+	};
+
+	const lat = Number(values.lat);
+	const lng = Number(values.lng);
+
+	if (!values.title) errors.push('Title is required.');
+	if (!values.date) errors.push('Date is required.');
+	if (!values.placeName) errors.push('Place name is required.');
+	if (values.lat === '' || Number.isNaN(lat)) errors.push('Location is required.');
+	if (values.lng === '' || Number.isNaN(lng)) errors.push('Location is required.');
+
+	if (errors.length === 0) {
+		const tags = values.tags
+			.split(',')
+			.map((t) => t.trim().toLowerCase())
+			.filter(Boolean);
+
+		type AssetUpdate =
+			| { kind: AssetKind; action: 'remove' }
+			| { kind: AssetKind; action: 'add' | 'replace'; assetId: string; r2Key: string };
+		const assetUpdates: AssetUpdate[] = [];
+
+		for (const { kind, field } of ASSET_KIND_FIELDS) {
+			const removeFlag = formData.get(`remove_${field}`) === 'on';
+			const file = formData.get(field);
+			const hasNewFile = file instanceof File && file.size > 0;
+
+			if (removeFlag) {
+				assetUpdates.push({ kind, action: 'remove' });
+			} else if (hasNewFile && file instanceof File) {
+				const existingAsset = piece.assets.find((a) => a.kind === kind);
+				const assetId = existingAsset?.id ?? generateAssetId(new Set(piece.assets.map((a) => a.id)));
+				const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
+				const r2Key = buildAssetKey(piece.id, assetId, ext);
+				await env.ART_BUCKET.put(r2Key, await file.arrayBuffer(), {
+					httpMetadata: { contentType: file.type || 'application/octet-stream' }
+				});
+				assetUpdates.push({ kind, action: existingAsset ? 'replace' : 'add', assetId, r2Key });
+			}
+		}
+
+		await updatePieces(env.ART_BUCKET, (d) => {
+			const p = d.pieces.find((pp) => pp.id === piece.id);
+			if (!p) return;
+			p.title = values.title;
+			p.date = values.date;
+			p.stage = values.stage;
+			p.location = { lat, lng, placeName: values.placeName };
+			p.tags = tags;
+			p.notes = values.notes;
+
+			for (const update of assetUpdates) {
+				if (update.action === 'remove') {
+					p.assets = p.assets.filter((a) => a.kind !== update.kind);
+				} else if (update.action === 'replace') {
+					const existing = p.assets.find((a) => a.kind === update.kind);
+					if (existing) existing.r2Key = update.r2Key;
+				} else {
+					p.assets.push({ id: update.assetId, kind: update.kind, r2Key: update.r2Key, width: 0, height: 0 });
+				}
+			}
+		});
+
+		return Astro.redirect(`/piece/${piece.id}`);
+	}
+}
+---
+
+<Base title={piece ? `Edit: ${piece.title}` : 'Not found'}>
+	{!piece ? (
+		<p>Piece not found.</p>
+	) : (
+		<>
+			<h1>Edit: {piece.title}</h1>
+
+			{errors.length > 0 && (
+				<ul style="color:#b00;">
+					{errors.map((error) => (
+						<li>{error}</li>
+					))}
+				</ul>
+			)}
+
+			<form method="POST" enctype="multipart/form-data">
+				<p>
+					<label>Title<br /><input type="text" id="titleInput" name="title" value={values.title} required /></label>
+				</p>
+				<p>
+					<label>Date<br /><input type="date" name="date" value={values.date} required /></label>
+				</p>
+				<p>
+					<label>Stage<br />
+						<select name="stage">
+							<option value="finished" selected={values.stage === 'finished'}>Finished</option>
+							<option value="study" selected={values.stage === 'study'}>Study / sketch</option>
+						</select>
+					</label>
+				</p>
+
+				<p>
+					<strong>Location</strong><br />
+					<input type="hidden" id="latInput" name="lat" value={values.lat} />
+					<input type="hidden" id="lngInput" name="lng" value={values.lng} />
+					<button type="button" id="useCurrentLocationBtn">Use my current location</button>
+					<span id="locationReadout">Selected: {values.lat}, {values.lng}</span>
+					<div id="locationMap" style="height:280px; margin-top:0.5rem;"></div>
+				</p>
+				<p>
+					<label>Place name<br /><input type="text" id="placeNameInput" name="placeName" value={values.placeName} required /></label>
+				</p>
+
+				<p>
+					<label>Tags (comma-separated)<br /><input type="text" id="tagsInput" name="tags" value={values.tags} /></label>
+				</p>
+				{tagFrequency.length > 0 && (
+					<p>
+						{tagFrequency.map(({ tag, count }) => (
+							<button type="button" class="tag-chip" data-tag={tag} style="margin:0 0.25rem 0.25rem 0;">
+								{tag} ({count})
+							</button>
+						))}
+					</p>
+				)}
+
+				<p>
+					<label>Notes<br /><textarea name="notes" rows="4" cols="50">{values.notes}</textarea></label>
+				</p>
+
+				<h2>Photos</h2>
+				{ASSET_KIND_FIELDS.map(({ kind, field, label }) => {
+					const existing = piece.assets.find((a) => a.kind === kind);
+					return (
+						<div style="margin-bottom:1rem; padding:0.5rem; border:1px solid #ccc;">
+							<strong>{label}</strong><br />
+							{existing && (
+								<>
+									<img
+										src={imageUrl(existing.r2Key)}
+										alt={label}
+										style="max-width:200px; max-height:200px; display:block; margin:0.5rem 0;"
+									/>
+									<label><input type="checkbox" name={`remove_${field}`} /> Remove this image</label>
+									<br />
+								</>
+							)}
+							<label>
+								{existing ? 'Replace with' : 'Add'} image:
+								<input
+									type="file"
+									id={kind === 'final' ? 'finalImageInput' : undefined}
+									class="asset-preview-input"
+									data-preview-id={`preview-${field}`}
+									name={field}
+									accept="image/*"
+								/>
+							</label>
+							<br />
+							<img id={`preview-${field}`} alt="New preview" style="display:none; max-width:200px; max-height:200px; margin-top:0.5rem;" />
+						</div>
+					);
+				})}
+
+				<p><button type="submit">Save</button></p>
+			</form>
+
+			<form method="POST" style="margin-top:2rem;">
+				<input type="hidden" name="intent" value="delete" />
+				<button type="submit" data-confirm="Delete this piece? This cannot be undone.">Delete this piece</button>
+			</form>
+		</>
+	)}
+</Base>
+
+<script>
+	import { setupPieceForm } from '../../../scripts/pieceForm';
+
+	const latInput = document.getElementById('latInput') as HTMLInputElement | null;
+	const lngInput = document.getElementById('lngInput') as HTMLInputElement | null;
+	const initialLat = latInput?.value ? Number(latInput.value) : undefined;
+	const initialLng = lngInput?.value ? Number(lngInput.value) : undefined;
+
+	setupPieceForm({
+		initialLat: Number.isFinite(initialLat) ? initialLat : undefined,
+		initialLng: Number.isFinite(initialLng) ? initialLng : undefined
+	});
+
+	document.querySelectorAll<HTMLButtonElement>('button[data-confirm]').forEach((btn) => {
+		btn.addEventListener('click', (e) => {
+			const message = btn.dataset.confirm;
+			if (message && !confirm(message)) {
+				e.preventDefault();
+			}
+		});
+	});
+</script>

@@ -1,6 +1,7 @@
 ---
 import { env } from 'cloudflare:workers';
 import Base from '../../layouts/Base.astro';
+import PieceThumb from '../../components/PieceThumb.astro';
 import { getPieces } from '../../lib/data';
 import { getPiecesByTag } from '../../lib/facets';
 import { PAGE_CACHE_CONTROL } from '../../lib/cache';
@@ -17,9 +18,11 @@ const pieces = slug ? getPiecesByTag(data, slug) : [];
 	{pieces.length === 0 ? (
 		<p><em>No pieces tagged #{slug} yet.</em></p>
 	) : (
-		<ul>
+		<ul style="list-style:none; padding:0;">
 			{pieces.map((piece) => (
-				<li><a href={`/piece/${piece.id}`}>{piece.title}</a> — {piece.date}</li>
+				<li style="margin-bottom:0.5rem;">
+					<a href={`/piece/${piece.id}`}><PieceThumb piece={piece} />{piece.title}</a> — {piece.date}
+				</li>
 			))}
 		</ul>
 	)}

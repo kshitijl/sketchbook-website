@@ -3,6 +3,7 @@ import { env } from 'cloudflare:workers';
 import Base from '../../layouts/Base.astro';
 import { getPieces } from '../../lib/data';
 import { getAssetsByKind } from '../../lib/facets';
+import { imageUrl } from '../../lib/images';
 import { PAGE_CACHE_CONTROL } from '../../lib/cache';
 import type { AssetKind } from '../../lib/types';
 
@@ -29,10 +30,18 @@ const results = isValidKind(kind) ? getAssetsByKind(data, kind) : [];
 			{results.length === 0 ? (
 				<p><em>No assets of this kind yet.</em></p>
 			) : (
-				<ul>
+				<ul style="list-style:none; padding:0;">
 					{results.map(({ piece, asset }) => (
-						<li>
-							<a href={`/piece/${piece.id}`}>{piece.title}</a>
+						<li style="margin-bottom:0.5rem;">
+							<a href={`/piece/${piece.id}`}>
+								<img
+									src={imageUrl(asset.r2Key)}
+									alt={asset.caption || piece.title}
+									width="64"
+									height="64"
+									style="width:64px; height:64px; object-fit:cover; vertical-align:middle; margin-right:0.5rem; border-radius:2px;"
+								/>{piece.title}
+							</a>
 							{asset.caption ? ` — ${asset.caption}` : ''} ({piece.date})
 						</li>
 					))}

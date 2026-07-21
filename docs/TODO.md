@@ -36,9 +36,11 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
 - [x] `/` home — favorites (by `favoriteRank`), recent pieces (by `date`); reads live from R2,
       verified against an empty bucket. Still needed: pinned quick-links content once any exist,
       phase density indicator
-- [x] `/piece/[id]` — full detail: tags, date, stage, location, notes, asset list (images pending
-      Phase 3 — currently lists kind/caption/r2Key as text). 404s (with `Astro.response.status`)
-      when the id doesn't exist.
+- [ ] Home page: also show a small section of randomly-picked pieces (not just favorites/recent) —
+      a "rediscover something old" section
+- [x] `/piece/[id]` — full detail: tags, date, stage, location, notes, real images (final piece
+      first, then the rest), an Edit link. 404s (with `Astro.response.status`) when the id doesn't
+      exist.
 - [x] `/tag/[slug]` — all pieces containing that tag in `tags[]`
 - [x] `/kind/[kind]` — all assets across all pieces matching that `assets[].kind`; 404s on an
       unrecognized kind
@@ -54,17 +56,29 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
       `wrangler dev` against the real Workers runtime
 
 ## Phase 3 — Images
+- [x] Admin image upload: accept multipart upload, write to R2 under
+      `assets/<piece-id>/<asset-id>-v<timestamp>.<ext>`, never reuse a key — done as part of the
+      admin new/edit forms (`src/lib/ids.ts`'s `buildAssetKey`)
+- [x] Raw image serving route (`src/pages/img/[...key].ts`) — streams an R2 object directly with
+      `writeHttpMetadata`/etag and a long immutable Cache-Control (safe since keys are versioned).
+      `imageUrl(r2Key)` helper in `src/lib/images.ts` builds the URL. Wired into every page that
+      shows an image: `/piece/[id]`, `/kind/[kind]`, `PieceThumb.astro` (used by home/timeline/
+      tag/browse/admin listings). Verified end-to-end: real bytes, correct content-type, 404 on a
+      missing key.
+- [ ] This is a **plain passthrough today, not yet using Cloudflare Image Transformations**
+      (`/cdn-cgi/image/width=...,format=auto/...`) — that URL pattern only works on Cloudflare's
+      real edge network, not in local dev/wrangler dev, so it couldn't be verified locally and was
+      deferred. Once deployed: wrap `imageUrl()` to route through `/cdn-cgi/image/...` pointing at
+      the same `/img/...` passthrough, verify resizing/format-negotiation actually works against
+      the real zone, and decide on thumbnail/medium/original size variants.
 - [ ] Note: the Cloudflare adapter auto-enables a Cloudflare *Images* binding for Astro's built-in
-      `<Image>` component by default (seen in build/dev logs) — decide whether to use that or stick
-      with the plan's raw `<img>` + `/cdn-cgi/image/...` transform URLs against R2, so we don't end
-      up with two competing image pipelines
-- [ ] Admin image upload endpoint: accept multipart upload, write to R2 under
-      `assets/<piece-id>/<asset-id>-v<n>.<ext>`, never reuse a key
-- [ ] Wire image `<img>` tags across all pages to the Cloudflare Image Transformation URL pattern
-      (`/cdn-cgi/image/width=...,format=auto/...`) instead of raw originals
-- [ ] Verify responsive sizes: thumbnail (list/grid views), medium (detail view), original
-      (download/zoom link)
-- [ ] Confirm cache headers on transformed image responses are long-lived/immutable
+      `<Image>` component by default (seen in build/dev logs) — we are not using that (using raw
+      `<img>` + our own `/img/...` route instead, per the above), just flagging it's there so it
+      doesn't get confused for our pipeline
+- [ ] Determine real image width/height at upload time (currently stored as `0, 0` placeholders) —
+      needed for proper aspect-ratio layout/no-layout-shift; Workers runtime has no native image
+      decoder, so this needs either a small pure-JS header parser (PNG/JPEG dimensions are readable
+      from just the first few bytes) or a WASM image lib
 
 ## Phase 4 — Map island
 - [ ] Leaflet setup as an Astro island (`client:visible` or similar), free tile source
@@ -73,6 +87,9 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
 - [ ] Hover popup with thumbnail
 - [ ] Click → inline detail panel, hand-written vanilla JS render function (mirrors the
       `/piece/[id]` Astro template's content, intentionally duplicated per the architecture doc)
+- [ ] Area-select: draw/drag a selection box on the map and view every piece whose location falls
+      within it as a small gallery (a filtered grid, not just a list) — distinct from clicking a
+      single pin
 
 ## Phase 5 — Admin
 - [ ] Cloudflare Zero Trust: create Access application covering `/admin/*` and `/admin/api/*` — not
@@ -106,7 +123,14 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
         automatically from a photo's EXIF data — e.g. from an image exported out of Apple
         Photos/iOS — to pre-fill date/location instead of relying on manual entry or device
         geolocation at upload time? Investigate before building; not started
-- [ ] `/admin` edit form: load existing piece, edit any field, add/replace assets, delete a piece
+- [x] `/admin/edit/[id]` — load an existing piece, edit every metadata field, and per asset kind:
+      see the current image (if any), replace it, add one if missing, or check a box to remove it;
+      a separate delete-the-whole-piece action (with a confirm() prompt). Shares the location
+      map/tag-chips/preview/title-suggestion behavior with the new-piece form via
+      `src/scripts/pieceForm.ts` (`setupPieceForm()`), rather than duplicating that JS a second
+      time — only difference is the edit form pre-fills values and doesn't auto-fire geolocation.
+      Verified end-to-end: pre-filled fields, editing metadata, adding an asset kind that didn't
+      exist yet, removing one, and deleting the piece entirely.
 - [ ] `/admin` favorites reorder: numeric rank field per row, plain form submit
 - [ ] (Optional hardening) verify `Cf-Access-Authenticated-User-Email` header server-side in
       mutation handlers as defense-in-depth

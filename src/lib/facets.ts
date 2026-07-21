@@ -1,7 +1,13 @@
-import type { AssetKind, Piece, PiecesData } from './types';
+import type { Asset, AssetKind, Piece, PiecesData } from './types';
 
 export function getPieceById(data: PiecesData, id: string): Piece | undefined {
 	return data.pieces.find((p) => p.id === id);
+}
+
+/** The image to show as a piece's thumbnail/cover — the final piece if there is one, else
+ * whatever's first. */
+export function getPrimaryAsset(piece: Piece): Asset | undefined {
+	return piece.assets.find((a) => a.kind === 'final') ?? piece.assets[0];
 }
 
 export function getPiecesByTag(data: PiecesData, slug: string): Piece[] {

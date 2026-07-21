@@ -122,7 +122,15 @@ if (Astro.request.method === 'POST') {
 		<p>
 			<label>
 				<strong>Select image</strong><br />
-				<input type="file" id="finalImageInput" name={finalField.field} accept="image/*" required />
+				<input
+					type="file"
+					id="finalImageInput"
+					class="asset-preview-input"
+					data-preview-id="finalImagePreview"
+					name={finalField.field}
+					accept="image/*"
+					required
+				/>
 			</label>
 		</p>
 		<p>
@@ -153,7 +161,7 @@ if (Astro.request.method === 'POST') {
 			<div id="locationMap" style="height:280px; margin-top:0.5rem;"></div>
 		</p>
 		<p>
-			<label>Place name<br /><input type="text" name="placeName" value={values.placeName} required placeholder="e.g. Jaipur, India" /></label>
+			<label>Place name<br /><input type="text" id="placeNameInput" name="placeName" value={values.placeName} required placeholder="e.g. Jaipur, India" /></label>
 		</p>
 
 		<p>
@@ -177,7 +185,18 @@ if (Astro.request.method === 'POST') {
 			<summary>Other photos (optional): reference, in-progress, value study, setup</summary>
 			{otherAssetFields.map(({ field, label }) => (
 				<p>
-					<label>{label}<br /><input type="file" name={field} accept="image/*" /></label>
+					<label>
+						{label}<br />
+						<input
+							type="file"
+							class="asset-preview-input"
+							data-preview-id={`preview-${field}`}
+							name={field}
+							accept="image/*"
+						/>
+					</label>
+					<br />
+					<img id={`preview-${field}`} alt="Preview" style="display:none; max-width:200px; max-height:200px;" />
 				</p>
 			))}
 		</details>
@@ -187,92 +206,7 @@ if (Astro.request.method === 'POST') {
 </Base>
 
 <script>
-	import L from 'leaflet';
-	import 'leaflet/dist/leaflet.css';
-
-	const latInput = document.getElementById('latInput') as HTMLInputElement;
-	const lngInput = document.getElementById('lngInput') as HTMLInputElement;
-	const locationReadout = document.getElementById('locationReadout') as HTMLElement;
-
-	const map = L.map('locationMap').setView([40.7128, -74.006], 3);
-	L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-		attribution: '&copy; OpenStreetMap contributors',
-		maxZoom: 19
-	}).addTo(map);
-
-	let marker: L.Marker | null = null;
-
-	function setLocation(lat: number, lng: number) {
-		latInput.value = lat.toFixed(6);
-		lngInput.value = lng.toFixed(6);
-		locationReadout.textContent = `Selected: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-		if (marker) {
-			marker.setLatLng([lat, lng]);
-		} else {
-			marker = L.marker([lat, lng]).addTo(map);
-		}
-		map.setView([lat, lng], 13);
-	}
-
-	map.on('click', (e) => setLocation(e.latlng.lat, e.latlng.lng));
-
-	function useCurrentLocation() {
-		if (!navigator.geolocation) return;
-		navigator.geolocation.getCurrentPosition(
-			(pos) => setLocation(pos.coords.latitude, pos.coords.longitude),
-			() => {
-				/* permission denied or unavailable — leave the map at its default view */
-			}
-		);
-	}
-
-	document.getElementById('useCurrentLocationBtn')?.addEventListener('click', useCurrentLocation);
-	// Best-effort default to "here" on load, per the admin's request — this is the admin's own
-	// tool on their own device, not a public page, so an automatic permission prompt is fine.
-	useCurrentLocation();
-
-	// Image preview + filename-derived title suggestion.
-	const finalInput = document.getElementById('finalImageInput') as HTMLInputElement;
-	const preview = document.getElementById('finalImagePreview') as HTMLImageElement;
-	const titleInput = document.getElementById('titleInput') as HTMLInputElement;
-
-	function suggestTitleFromFilename(filename: string): string {
-		const base = filename.replace(/\.[^.]+$/, '');
-		const words = base
-			.replace(/[-_]+/g, ' ')
-			.replace(/[0-9]+/g, '')
-			.replace(/\s+/g, ' ')
-			.trim();
-		return words.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
-	}
-
-	finalInput.addEventListener('change', () => {
-		const file = finalInput.files?.[0];
-		if (!file) {
-			preview.style.display = 'none';
-			return;
-		}
-		preview.src = URL.createObjectURL(file);
-		preview.style.display = 'block';
-		if (!titleInput.value.trim()) {
-			titleInput.value = suggestTitleFromFilename(file.name);
-		}
-	});
-
-	// Clickable previously-used tag chips.
-	const tagsInput = document.getElementById('tagsInput') as HTMLInputElement;
-	document.querySelectorAll<HTMLButtonElement>('.tag-chip').forEach((chip) => {
-		chip.addEventListener('click', () => {
-			const tag = chip.dataset.tag;
-			if (!tag) return;
-			const current = tagsInput.value
-				.split(',')
-				.map((t) => t.trim())
-				.filter(Boolean);
-			if (!current.includes(tag)) {
-				current.push(tag);
-				tagsInput.value = current.join(', ');
-			}
-		});
-	});
+	import { setupPieceForm } from '../../scripts/pieceForm';
+	// No initial lat/lng — auto-fires geolocation on load since this is a brand-new piece.
+	setupPieceForm({ autoUseCurrentLocation: true });
 </script>

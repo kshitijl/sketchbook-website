@@ -1,6 +1,7 @@
 ---
 import { env } from 'cloudflare:workers';
 import Base from '../layouts/Base.astro';
+import PieceThumb from '../components/PieceThumb.astro';
 import { getPieces } from '../lib/data';
 import { PAGE_CACHE_CONTROL } from '../lib/cache';
 import type { Piece } from '../lib/types';
@@ -32,9 +33,11 @@ const recent = [...data.pieces].sort((a, b) => (a.date < b.date ? 1 : -1)).slice
 		{favorites.length === 0 ? (
 			<p><em>No favorites marked yet.</em></p>
 		) : (
-			<ul>
+			<ul style="list-style:none; padding:0;">
 				{favorites.map((piece) => (
-					<li><a href={`/piece/${piece.id}`}>{piece.title}</a> — {piece.date}</li>
+					<li style="margin-bottom:0.5rem;">
+						<a href={`/piece/${piece.id}`}><PieceThumb piece={piece} />{piece.title}</a> — {piece.date}
+					</li>
 				))}
 			</ul>
 		)}
@@ -45,9 +48,11 @@ const recent = [...data.pieces].sort((a, b) => (a.date < b.date ? 1 : -1)).slice
 		{recent.length === 0 ? (
 			<p><em>Nothing uploaded yet.</em></p>
 		) : (
-			<ul>
+			<ul style="list-style:none; padding:0;">
 				{recent.map((piece) => (
-					<li><a href={`/piece/${piece.id}`}>{piece.title}</a> — {piece.date}</li>
+					<li style="margin-bottom:0.5rem;">
+						<a href={`/piece/${piece.id}`}><PieceThumb piece={piece} />{piece.title}</a> — {piece.date}
+					</li>
 				))}
 			</ul>
 		)}
