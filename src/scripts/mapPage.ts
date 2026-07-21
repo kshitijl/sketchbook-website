@@ -42,10 +42,10 @@ function escapeHtml(s: string): string {
 function renderDetail(piece: Piece): string {
 	const ordered = [...piece.assets].sort((a, b) => (a.kind === 'final' ? -1 : b.kind === 'final' ? 1 : 0));
 	const imagesHtml = ordered
-		.map(
-			(asset) =>
-				`<figure style="margin:0 0 1rem 0;"><img src="${imageUrl(asset.r2Key)}" alt="${escapeHtml(piece.title)}" style="max-width:100%; height:auto;" /><figcaption>${escapeHtml(asset.kind)}</figcaption></figure>`
-		)
+		.map((asset) => {
+			const dims = asset.width && asset.height ? ` width="${asset.width}" height="${asset.height}"` : '';
+			return `<figure style="margin:0 0 1rem 0;"><img src="${imageUrl(asset.r2Key)}" alt="${escapeHtml(piece.title)}"${dims} style="max-width:100%; height:auto;" /><figcaption>${escapeHtml(asset.kind)}</figcaption></figure>`;
+		})
 		.join('');
 	const tagsHtml = piece.tags.map((t) => `<a href="/tag/${encodeURIComponent(t)}">#${escapeHtml(t)}</a>`).join(' ');
 

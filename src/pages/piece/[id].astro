@@ -38,7 +38,13 @@ const orderedAssets = piece
 
 			{orderedAssets.map((asset) => (
 				<figure style="margin:0 0 1rem 0;">
-					<img src={imageUrl(asset.r2Key)} alt={asset.caption || `${piece.title} (${asset.kind})`} style="max-width:100%; height:auto;" />
+					<img
+						src={imageUrl(asset.r2Key)}
+						alt={asset.caption || `${piece.title} (${asset.kind})`}
+						width={asset.width || undefined}
+						height={asset.height || undefined}
+						style="max-width:100%; height:auto;"
+					/>
 					<figcaption>{asset.kind}{asset.caption ? ` — ${asset.caption}` : ''}</figcaption>
 				</figure>
 			))}

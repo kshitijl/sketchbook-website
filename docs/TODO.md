@@ -85,10 +85,14 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
       `<Image>` component by default (seen in build/dev logs) — we are not using that (using raw
       `<img>` + our own `/img/...` route instead, per the above), just flagging it's there so it
       doesn't get confused for our pipeline
-- [ ] Determine real image width/height at upload time (currently stored as `0, 0` placeholders) —
-      needed for proper aspect-ratio layout/no-layout-shift; Workers runtime has no native image
-      decoder, so this needs either a small pure-JS header parser (PNG/JPEG dimensions are readable
-      from just the first few bytes) or a WASM image lib
+- [x] Real image width/height at upload time — `src/lib/imageDimensions.ts`, a small pure-JS
+      PNG/JPEG header parser (dimensions are readable from just the first ~25 bytes, no decoder
+      needed). Wired into both the new-piece form and the edit form's add/replace paths (replacing
+      previously left dimensions stale — fixed). Used for `width`/`height` attributes on
+      `/piece/[id]` and the map's detail panel, so the browser can reserve layout space before the
+      image loads. Falls back to `0, 0` (attribute omitted) for anything it doesn't recognize.
+      Verified against a manually-constructed 400×300 PNG (correct on upload) and a 150×600
+      replacement (correct on replace, not just add).
 
 ## Phase 4 — Map island
 - [x] `/map` page (`src/pages/map.astro`) + `src/scripts/mapPage.ts`, Leaflet + free OSM tiles.

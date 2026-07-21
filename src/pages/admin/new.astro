@@ -4,6 +4,7 @@ import Base from '../../layouts/Base.astro';
 import { getPieces, updatePieces } from '../../lib/data';
 import { getTagFrequency } from '../../lib/facets';
 import { generateAssetId, generatePieceId, buildAssetKey } from '../../lib/ids';
+import { getImageDimensions } from '../../lib/imageDimensions';
 import { ASSET_KIND_FIELDS } from '../../lib/assetKinds';
 import type { Asset, Piece, Stage } from '../../lib/types';
 
@@ -79,10 +80,12 @@ if (Astro.request.method === 'POST') {
 				existingAssetIds.add(assetId);
 				const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
 				const r2Key = buildAssetKey(newId, assetId, ext);
-				await env.ART_BUCKET.put(r2Key, await file.arrayBuffer(), {
+				const buffer = await file.arrayBuffer();
+				const dims = getImageDimensions(new Uint8Array(buffer));
+				await env.ART_BUCKET.put(r2Key, buffer, {
 					httpMetadata: { contentType: file.type || 'application/octet-stream' }
 				});
-				assets.push({ id: assetId, kind, r2Key, width: 0, height: 0 });
+				assets.push({ id: assetId, kind, r2Key, width: dims?.width ?? 0, height: dims?.height ?? 0 });
 			}
 		}
 

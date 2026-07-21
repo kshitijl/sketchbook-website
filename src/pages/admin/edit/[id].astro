@@ -4,6 +4,7 @@ import Base from '../../../layouts/Base.astro';
 import { getPieces, updatePieces } from '../../../lib/data';
 import { getPieceById, getTagFrequency } from '../../../lib/facets';
 import { generateAssetId, buildAssetKey } from '../../../lib/ids';
+import { getImageDimensions } from '../../../lib/imageDimensions';
 import { ASSET_KIND_FIELDS } from '../../../lib/assetKinds';
 import { imageUrl } from '../../../lib/images';
 import type { AssetKind, Stage } from '../../../lib/types';
@@ -81,7 +82,7 @@ if (piece && Astro.request.method === 'POST') {
 
 		type AssetUpdate =
 			| { kind: AssetKind; action: 'remove' }
-			| { kind: AssetKind; action: 'add' | 'replace'; assetId: string; r2Key: string };
+			| { kind: AssetKind; action: 'add' | 'replace'; assetId: string; r2Key: string; width: number; height: number };
 		const assetUpdates: AssetUpdate[] = [];
 
 		for (const { kind, field } of ASSET_KIND_FIELDS) {
@@ -96,10 +97,19 @@ if (piece && Astro.request.method === 'POST') {
 				const assetId = existingAsset?.id ?? generateAssetId(new Set(piece.assets.map((a) => a.id)));
 				const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
 				const r2Key = buildAssetKey(piece.id, assetId, ext);
-				await env.ART_BUCKET.put(r2Key, await file.arrayBuffer(), {
+				const buffer = await file.arrayBuffer();
+				const dims = getImageDimensions(new Uint8Array(buffer));
+				await env.ART_BUCKET.put(r2Key, buffer, {
 					httpMetadata: { contentType: file.type || 'application/octet-stream' }
 				});
-				assetUpdates.push({ kind, action: existingAsset ? 'replace' : 'add', assetId, r2Key });
+				assetUpdates.push({
+					kind,
+					action: existingAsset ? 'replace' : 'add',
+					assetId,
+					r2Key,
+					width: dims?.width ?? 0,
+					height: dims?.height ?? 0
+				});
 			}
 		}
 
@@ -118,9 +128,19 @@ if (piece && Astro.request.method === 'POST') {
 					p.assets = p.assets.filter((a) => a.kind !== update.kind);
 				} else if (update.action === 'replace') {
 					const existing = p.assets.find((a) => a.kind === update.kind);
-					if (existing) existing.r2Key = update.r2Key;
+					if (existing) {
+						existing.r2Key = update.r2Key;
+						existing.width = update.width;
+						existing.height = update.height;
+					}
 				} else {
-					p.assets.push({ id: update.assetId, kind: update.kind, r2Key: update.r2Key, width: 0, height: 0 });
+					p.assets.push({
+						id: update.assetId,
+						kind: update.kind,
+						r2Key: update.r2Key,
+						width: update.width,
+						height: update.height
+					});
 				}
 			}
 		});
