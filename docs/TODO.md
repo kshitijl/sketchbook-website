@@ -3,29 +3,38 @@
 See `docs/architecture.md` for the full design. This is the ordered task breakdown.
 
 ## Phase 0 — Scaffolding
-- [ ] `npm create astro@latest` (TypeScript, minimal template)
-- [ ] Add `@astrojs/cloudflare` adapter, set `output: "server"` in `astro.config.mjs`
-- [ ] Add `wrangler.toml` / `wrangler.jsonc` with the Worker name and compatibility date
-- [ ] Create the R2 bucket (`wrangler r2 bucket create`) and add its binding to wrangler config
-- [ ] Confirm local dev works with bindings: `astro dev` (or `wrangler dev`) can read/write the R2
-      binding in local emulation
-- [ ] Add `.gitignore` for `node_modules`, `.astro`, `dist`, `.wrangler`
+- [x] `npm create astro@latest` (TypeScript, minimal template)
+- [x] Add `@astrojs/cloudflare` adapter, set `output: "server"` in `astro.config.mjs`
+- [x] Add `wrangler.jsonc` with the Worker name, compatibility date, and R2 binding (`ART_BUCKET`)
+- [ ] Create the *real* R2 bucket in Cloudflare (`wrangler r2 bucket create`) — requires the owner's
+      Cloudflare login, not done yet. Local dev/build use wrangler's local R2 emulation and don't
+      need this.
+- [x] Confirm local dev works with bindings: verified under both `astro dev` and `wrangler dev`
+      (real Workers runtime) against the local-emulated `ART_BUCKET`
+- [x] Add `.gitignore` for `node_modules`, `.astro`, `dist`, `.wrangler`
 - [ ] Decide and record the production custom domain / route
 
 ## Phase 1 — Data layer
-- [ ] Define the piece record TypeScript type (`stage`, `location`, `tags`, `notes`, `favoriteRank`,
-      `assets[]`) per `docs/architecture.md`
-- [ ] Write `getPieces()` — reads `data/pieces.json` from R2, returns parsed data + ETag
-- [ ] Write `savePieces(data, expectedEtag)` — conditional PUT (`onlyIf: {etagMatches}`), retry-on-
-      conflict by re-reading and re-applying the change
-- [ ] Decide id-generation scheme (slug from date+title, collision check against existing ids)
-- [ ] Seed an initial empty `data/pieces.json` (`{ "pieces": [], "pinnedLinks": [] }`) in R2
+- [x] Define the piece record TypeScript type (`stage`, `location`, `tags`, `notes`, `favoriteRank`,
+      `assets[]`) per `docs/architecture.md` — `src/lib/types.ts`
+- [x] Write `getPieces()` — reads `data/pieces.json` from R2, returns parsed data + ETag —
+      `src/lib/data.ts`
+- [x] Write `savePieces(data, expectedEtag)` — conditional PUT (`onlyIf: {etagMatches}`), throws
+      `ConflictError` on mismatch for the caller to retry — `src/lib/data.ts`
+- [x] Id-generation scheme: `<date>-<slugified-title>` with numeric suffix on collision —
+      `src/lib/ids.ts`. Asset keys get a `Date.now()` version suffix so replacing an image never
+      needs cache invalidation.
+- [ ] Seed an initial empty `data/pieces.json` (`{ "pieces": [], "pinnedLinks": [] }`) in the *real*
+      R2 bucket once it exists (code already handles a missing object as the empty-data case)
 - [ ] Write a small internal script/route to bulk-import pieces later (used in Phase 7)
 
 ## Phase 2 — Public read pages
-- [ ] Shared layout (nav, minimal CSS, no framework JS by default)
-- [ ] `/` home — favorites (by `favoriteRank`), recent pieces (by `date`), pinned quick-links, phase
-      density indicator
+- [x] Shared layout (`src/layouts/Base.astro`) — nav, minimal CSS, no framework JS by default
+- [x] Uniform `Cache-Control: public, max-age=60` helper (`src/lib/cache.ts`), applied to the home
+      page — apply the same to every other page below as it's built
+- [x] `/` home — favorites (by `favoriteRank`), recent pieces (by `date`); reads live from R2,
+      verified against an empty bucket. Still needed: pinned quick-links content once any exist,
+      phase density indicator
 - [ ] `/piece/[id]` — full detail: primary (`kind: final`) image, other assets, tags, date, notes
 - [ ] `/tag/[slug]` — all pieces containing that tag in `tags[]`
 - [ ] `/kind/[kind]` — all assets across all pieces matching that `assets[].kind`
@@ -36,6 +45,10 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
 - [ ] 404 page
 
 ## Phase 3 — Images
+- [ ] Note: the Cloudflare adapter auto-enables a Cloudflare *Images* binding for Astro's built-in
+      `<Image>` component by default (seen in build/dev logs) — decide whether to use that or stick
+      with the plan's raw `<img>` + `/cdn-cgi/image/...` transform URLs against R2, so we don't end
+      up with two competing image pipelines
 - [ ] Admin image upload endpoint: accept multipart upload, write to R2 under
       `assets/<piece-id>/<asset-id>-v<n>.<ext>`, never reuse a key
 - [ ] Wire image `<img>` tags across all pages to the Cloudflare Image Transformation URL pattern

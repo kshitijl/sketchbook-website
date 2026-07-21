@@ -1,0 +1,20 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"compatibility_date": "2026-07-21",
+	"compatibility_flags": ["global_fetch_strictly_public"],
+	"name": "31-art-website",
+	"main": "@astrojs/cloudflare/entrypoints/server",
+	"assets": {
+		"directory": "./dist",
+		"binding": "ASSETS"
+	},
+	"observability": {
+		"enabled": true
+	},
+	"r2_buckets": [
+		{
+			"binding": "ART_BUCKET",
+			"bucket_name": "31-art-website-data"
+		}
+	]
+}

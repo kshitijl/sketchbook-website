@@ -1,0 +1,55 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../layouts/Base.astro';
+import { getPieces } from '../lib/data';
+import { PAGE_CACHE_CONTROL } from '../lib/cache';
+import type { Piece } from '../lib/types';
+
+Astro.response.headers.set('Cache-Control', PAGE_CACHE_CONTROL);
+
+const { data } = await getPieces(env.ART_BUCKET);
+
+const favorites = data.pieces
+	.filter((p): p is Piece & { favoriteRank: number } => p.favoriteRank !== null)
+	.sort((a, b) => a.favoriteRank - b.favoriteRank);
+
+const recent = [...data.pieces].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 12);
+---
+
+<Base title="Sketches & paintings">
+	<h1>Sketches &amp; paintings</h1>
+
+	{data.pinnedLinks.length > 0 && (
+		<p>
+			{data.pinnedLinks.map((link) => (
+				<a href={link.href}>{link.label}</a>
+			))}
+		</p>
+	)}
+
+	<section>
+		<h2>Favorites</h2>
+		{favorites.length === 0 ? (
+			<p><em>No favorites marked yet.</em></p>
+		) : (
+			<ul>
+				{favorites.map((piece) => (
+					<li><a href={`/piece/${piece.id}`}>{piece.title}</a> — {piece.date}</li>
+				))}
+			</ul>
+		)}
+	</section>
+
+	<section>
+		<h2>Recent</h2>
+		{recent.length === 0 ? (
+			<p><em>Nothing uploaded yet.</em></p>
+		) : (
+			<ul>
+				{recent.map((piece) => (
+					<li><a href={`/piece/${piece.id}`}>{piece.title}</a> — {piece.date}</li>
+				))}
+			</ul>
+		)}
+	</section>
+</Base>
