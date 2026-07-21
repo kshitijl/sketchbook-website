@@ -84,6 +84,16 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
 - [x] `/piece/[id]` — full detail: tags, date, stage, location, notes, real images (final piece
       first, then the rest), an Edit link. 404s (with `Astro.response.status`) when the id doesn't
       exist.
+- [x] **Gap found on review**: docs/architecture.md's page inventory explicitly justified real
+      static permalink pages with "sharing, SEO/OG tags" as the reason — but Open Graph meta tags
+      were never actually built. Added to `Base.astro` (optional `description`/`image` props,
+      generic site description as the default) and wired into `/piece/[id]` with the real
+      per-piece description (falls back to date/stage/place if no notes) and an absolute image URL
+      (`new URL(imageUrl(...), Astro.url)` — derived from the current request's own origin, so
+      it's correct on `workers.dev` today and the eventual custom domain later without code
+      changes). Verified end-to-end against the live production site with a real uploaded image:
+      correct title/description/image meta tags, `twitter:card` switches to `summary_large_image`
+      when there's an image.
 - [x] `/tag/[slug]` — all pieces containing that tag in `tags[]`
 - [x] `/kind/[kind]` — all assets across all pieces matching that `assets[].kind`; 404s on an
       unrecognized kind

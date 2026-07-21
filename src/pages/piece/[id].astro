@@ -2,7 +2,7 @@
 import { env } from 'cloudflare:workers';
 import Base from '../../layouts/Base.astro';
 import { getPieces } from '../../lib/data';
-import { getPieceById, orderAssetsFinalFirst } from '../../lib/facets';
+import { getPieceById, getPrimaryAsset, orderAssetsFinalFirst } from '../../lib/facets';
 import { imageUrl } from '../../lib/images';
 import { PAGE_CACHE_CONTROL } from '../../lib/cache';
 
@@ -17,9 +17,17 @@ if (!piece) {
 }
 
 const orderedAssets = piece ? orderAssetsFinalFirst(piece.assets) : [];
+
+// Open Graph needs an absolute image URL — derived from the current request's own origin so it's
+// correct whether this is served from workers.dev or the eventual custom domain.
+const primaryAsset = piece ? getPrimaryAsset(piece) : undefined;
+const ogImage = primaryAsset ? new URL(imageUrl(primaryAsset.r2Key), Astro.url).toString() : undefined;
+const ogDescription = piece
+	? piece.notes || `${piece.date} · ${piece.stage} · ${piece.location.placeName}`
+	: undefined;
 ---
 
-<Base title={piece ? piece.title : 'Not found'}>
+<Base title={piece ? piece.title : 'Not found'} description={ogDescription} image={ogImage}>
 	{piece ? (
 		<article>
 			<h1>{piece.title}</h1>

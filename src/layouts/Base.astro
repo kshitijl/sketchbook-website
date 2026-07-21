@@ -1,8 +1,13 @@
 ---
 interface Props {
 	title: string;
+	/** Open Graph/Twitter description. Falls back to a generic site description. */
+	description?: string;
+	/** Open Graph/Twitter image — must be an absolute URL (relative ones aren't valid OG images). */
+	image?: string;
 }
-const { title } = Astro.props;
+const { title, description = 'Sketches and paintings from on-location drawing sessions.', image } =
+	Astro.props;
 
 // Debug footer: if reloading the same URL keeps showing the same renderId, that request was
 // served from Cloudflare's edge cache, not re-rendered by the Worker. See docs/architecture.md's
@@ -22,6 +27,12 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="generator" content={Astro.generator} />
 		<title>{title}</title>
+		<meta name="description" content={description} />
+		<meta property="og:type" content="website" />
+		<meta property="og:title" content={title} />
+		<meta property="og:description" content={description} />
+		{image && <meta property="og:image" content={image} />}
+		<meta name="twitter:card" content={image ? 'summary_large_image' : 'summary'} />
 		<style is:global>
 			:root {
 				color-scheme: light dark;
