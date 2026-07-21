@@ -91,12 +91,24 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
       from just the first few bytes) or a WASM image lib
 
 ## Phase 4 — Map island
-- [ ] Leaflet setup as an Astro island (`client:visible` or similar), free tile source
-- [ ] Marker rendering from `data/pieces.json` (id, lat/lng, thumbnail, tags for pin styling)
-- [ ] Clustering when zoomed out
-- [ ] Hover popup with thumbnail
-- [ ] Click → inline detail panel, hand-written vanilla JS render function (mirrors the
-      `/piece/[id]` Astro template's content, intentionally duplicated per the architecture doc)
+- [x] `/map` page (`src/pages/map.astro`) + `src/scripts/mapPage.ts`, Leaflet + free OSM tiles.
+      Implementation choice: rather than a separate fetchable `data/pieces.json` endpoint (as
+      originally sketched in docs/architecture.md), the full piece list is embedded directly in
+      the page as a `<script type="application/json">` tag (JSON with `<` escaped to `<` so a
+      stray `</script>` in a title/note can't break out of the tag) — one fewer request, and it
+      automatically inherits the page's own Cache-Control instead of needing separate cache-header
+      wiring for a dedicated data route.
+- [x] Marker rendering: one marker per piece from the embedded data, map auto-fits bounds to
+      whatever pieces exist
+- [x] Hover popup with a thumbnail (the primary/final asset)
+- [x] Click → inline detail panel below the map (hand-written `renderDetail()` in
+      `src/scripts/mapPage.ts`, HTML-escaped since it's built via `innerHTML`) — the intentional
+      duplication of `/piece/[id]`'s content noted in docs/architecture.md as the accepted cost of
+      not using htmx
+- [x] Verified end-to-end locally: page loads, all pieces present in the embedded JSON, compiled
+      script module loads without error
+- [ ] Clustering when zoomed out — not yet needed at current piece counts, revisit once there's
+      enough real data to make a zoomed-out view crowded
 - [ ] Area-select: draw/drag a selection box on the map and view every piece whose location falls
       within it as a small gallery (a filtered grid, not just a list) — distinct from clicking a
       single pin
