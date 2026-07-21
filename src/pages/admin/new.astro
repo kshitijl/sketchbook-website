@@ -2,16 +2,25 @@
 import { env } from 'cloudflare:workers';
 import Base from '../../layouts/Base.astro';
 import { getPieces, updatePieces } from '../../lib/data';
+import { getTagFrequency } from '../../lib/facets';
 import { generateAssetId, generatePieceId, buildAssetKey } from '../../lib/ids';
 import { ASSET_KIND_FIELDS } from '../../lib/assetKinds';
 import type { Asset, Piece, Stage } from '../../lib/types';
 
 Astro.response.headers.set('Cache-Control', 'no-store');
 
+const { data: currentData } = await getPieces(env.ART_BUCKET);
+const tagFrequency = getTagFrequency(currentData);
+
+const finalField = ASSET_KIND_FIELDS.find((f) => f.kind === 'final')!;
+const otherAssetFields = ASSET_KIND_FIELDS.filter((f) => f.kind !== 'final');
+
+const todayISO = new Date().toISOString().slice(0, 10);
+
 const errors: string[] = [];
 let values = {
 	title: '',
-	date: '',
+	date: todayISO,
 	stage: 'finished' as Stage,
 	lat: '',
 	lng: '',
@@ -40,13 +49,12 @@ if (Astro.request.method === 'POST') {
 	if (!values.title) errors.push('Title is required.');
 	if (!values.date) errors.push('Date is required.');
 	if (!values.placeName) errors.push('Place name is required.');
-	if (values.lat === '' || Number.isNaN(lat)) errors.push('Latitude must be a number.');
-	if (values.lng === '' || Number.isNaN(lng)) errors.push('Longitude must be a number.');
+	if (values.lat === '' || Number.isNaN(lat)) errors.push('Location is required — click the map or use your current location.');
+	if (values.lng === '' || Number.isNaN(lng)) errors.push('Location is required — click the map or use your current location.');
 
-	const finalField = ASSET_KIND_FIELDS.find((f) => f.kind === 'final')!;
 	const finalFile = formData.get(finalField.field);
 	if (!(finalFile instanceof File) || finalFile.size === 0) {
-		errors.push('A final image is required.');
+		errors.push('An image is required.');
 	}
 
 	if (errors.length === 0) {
@@ -57,7 +65,6 @@ if (Astro.request.method === 'POST') {
 
 		// Id generation only needs to peek at current ids, not hold a lock — the tiny residual
 		// risk of a collision with a concurrent write is an acceptable trade for a single editor.
-		const { data: currentData } = await getPieces(env.ART_BUCKET);
 		const existingIds = new Set(currentData.pieces.map((p) => p.id));
 		const newId = generatePieceId(values.title, values.date, existingIds);
 
@@ -113,7 +120,17 @@ if (Astro.request.method === 'POST') {
 
 	<form method="POST" enctype="multipart/form-data">
 		<p>
-			<label>Title<br /><input type="text" name="title" value={values.title} required /></label>
+			<label>
+				<strong>Select image</strong><br />
+				<input type="file" id="finalImageInput" name={finalField.field} accept="image/*" required />
+			</label>
+		</p>
+		<p>
+			<img id="finalImagePreview" alt="Preview" style="display:none; max-width:320px; max-height:320px;" />
+		</p>
+
+		<p>
+			<label>Title<br /><input type="text" id="titleInput" name="title" value={values.title} required /></label>
 		</p>
 		<p>
 			<label>Date<br /><input type="date" name="date" value={values.date} required /></label>
@@ -126,27 +143,136 @@ if (Astro.request.method === 'POST') {
 				</select>
 			</label>
 		</p>
+
 		<p>
-			<label>Latitude<br /><input type="number" step="any" name="lat" value={values.lat} required /></label>
-			&nbsp;
-			<label>Longitude<br /><input type="number" step="any" name="lng" value={values.lng} required /></label>
+			<strong>Location</strong><br />
+			<input type="hidden" id="latInput" name="lat" value={values.lat} />
+			<input type="hidden" id="lngInput" name="lng" value={values.lng} />
+			<button type="button" id="useCurrentLocationBtn">Use my current location</button>
+			<span id="locationReadout">No location selected yet — click the map or use the button above.</span>
+			<div id="locationMap" style="height:280px; margin-top:0.5rem;"></div>
 		</p>
 		<p>
-			<label>Place name<br /><input type="text" name="placeName" value={values.placeName} required /></label>
+			<label>Place name<br /><input type="text" name="placeName" value={values.placeName} required placeholder="e.g. Jaipur, India" /></label>
 		</p>
+
 		<p>
-			<label>Tags (comma-separated)<br /><input type="text" name="tags" value={values.tags} /></label>
+			<label>Tags (comma-separated)<br /><input type="text" id="tagsInput" name="tags" value={values.tags} /></label>
 		</p>
+		{tagFrequency.length > 0 && (
+			<p>
+				{tagFrequency.map(({ tag, count }) => (
+					<button type="button" class="tag-chip" data-tag={tag} style="margin:0 0.25rem 0.25rem 0;">
+						{tag} ({count})
+					</button>
+				))}
+			</p>
+		)}
+
 		<p>
 			<label>Notes<br /><textarea name="notes" rows="4" cols="50">{values.notes}</textarea></label>
 		</p>
 
-		{ASSET_KIND_FIELDS.map(({ field, label, required }) => (
-			<p>
-				<label>{label}{required ? ' (required)' : ''}<br /><input type="file" name={field} accept="image/*" required={required} /></label>
-			</p>
-		))}
+		<details>
+			<summary>Other photos (optional): reference, in-progress, value study, setup</summary>
+			{otherAssetFields.map(({ field, label }) => (
+				<p>
+					<label>{label}<br /><input type="file" name={field} accept="image/*" /></label>
+				</p>
+			))}
+		</details>
 
 		<p><button type="submit">Save</button></p>
 	</form>
 </Base>
+
+<script>
+	import L from 'leaflet';
+	import 'leaflet/dist/leaflet.css';
+
+	const latInput = document.getElementById('latInput') as HTMLInputElement;
+	const lngInput = document.getElementById('lngInput') as HTMLInputElement;
+	const locationReadout = document.getElementById('locationReadout') as HTMLElement;
+
+	const map = L.map('locationMap').setView([40.7128, -74.006], 3);
+	L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+		attribution: '&copy; OpenStreetMap contributors',
+		maxZoom: 19
+	}).addTo(map);
+
+	let marker: L.Marker | null = null;
+
+	function setLocation(lat: number, lng: number) {
+		latInput.value = lat.toFixed(6);
+		lngInput.value = lng.toFixed(6);
+		locationReadout.textContent = `Selected: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+		if (marker) {
+			marker.setLatLng([lat, lng]);
+		} else {
+			marker = L.marker([lat, lng]).addTo(map);
+		}
+		map.setView([lat, lng], 13);
+	}
+
+	map.on('click', (e) => setLocation(e.latlng.lat, e.latlng.lng));
+
+	function useCurrentLocation() {
+		if (!navigator.geolocation) return;
+		navigator.geolocation.getCurrentPosition(
+			(pos) => setLocation(pos.coords.latitude, pos.coords.longitude),
+			() => {
+				/* permission denied or unavailable — leave the map at its default view */
+			}
+		);
+	}
+
+	document.getElementById('useCurrentLocationBtn')?.addEventListener('click', useCurrentLocation);
+	// Best-effort default to "here" on load, per the admin's request — this is the admin's own
+	// tool on their own device, not a public page, so an automatic permission prompt is fine.
+	useCurrentLocation();
+
+	// Image preview + filename-derived title suggestion.
+	const finalInput = document.getElementById('finalImageInput') as HTMLInputElement;
+	const preview = document.getElementById('finalImagePreview') as HTMLImageElement;
+	const titleInput = document.getElementById('titleInput') as HTMLInputElement;
+
+	function suggestTitleFromFilename(filename: string): string {
+		const base = filename.replace(/\.[^.]+$/, '');
+		const words = base
+			.replace(/[-_]+/g, ' ')
+			.replace(/[0-9]+/g, '')
+			.replace(/\s+/g, ' ')
+			.trim();
+		return words.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+	}
+
+	finalInput.addEventListener('change', () => {
+		const file = finalInput.files?.[0];
+		if (!file) {
+			preview.style.display = 'none';
+			return;
+		}
+		preview.src = URL.createObjectURL(file);
+		preview.style.display = 'block';
+		if (!titleInput.value.trim()) {
+			titleInput.value = suggestTitleFromFilename(file.name);
+		}
+	});
+
+	// Clickable previously-used tag chips.
+	const tagsInput = document.getElementById('tagsInput') as HTMLInputElement;
+	document.querySelectorAll<HTMLButtonElement>('.tag-chip').forEach((chip) => {
+		chip.addEventListener('click', () => {
+			const tag = chip.dataset.tag;
+			if (!tag) return;
+			const current = tagsInput.value
+				.split(',')
+				.map((t) => t.trim())
+				.filter(Boolean);
+			if (!current.includes(tag)) {
+				current.push(tag);
+				tagsInput.value = current.join(', ');
+			}
+		});
+	});
+</script>

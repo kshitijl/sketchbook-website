@@ -45,6 +45,24 @@ export function getPiecesByPlace(data: PiecesData): Map<string, Piece[]> {
 	return byPlace;
 }
 
+export interface TagFrequency {
+	tag: string;
+	count: number;
+}
+
+/** Previously-used tags, most-used first — powers the clickable tag suggestions in the admin form. */
+export function getTagFrequency(data: PiecesData): TagFrequency[] {
+	const counts = new Map<string, number>();
+	for (const piece of data.pieces) {
+		for (const tag of piece.tags) {
+			counts.set(tag, (counts.get(tag) ?? 0) + 1);
+		}
+	}
+	return [...counts.entries()]
+		.map(([tag, count]) => ({ tag, count }))
+		.sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+}
+
 /** Rough medium classification used to derive "phases" (drawing-heavy vs painting-heavy
  * stretches) automatically from tags, instead of a manually maintained field. */
 const DRY_MEDIA = new Set(['pencil', 'ink']);

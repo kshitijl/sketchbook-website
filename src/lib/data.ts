@@ -21,7 +21,9 @@ export async function getPieces(bucket: R2Bucket): Promise<PiecesSnapshot> {
 		return { data: structuredClone(EMPTY_PIECES_DATA), etag: null };
 	}
 	const data = (await object.json()) as PiecesData;
-	return { data, etag: object.httpEtag };
+	// `.etag` (unquoted) is what `onlyIf.etagMatches` expects — `.httpEtag` is the quoted form
+	// meant for an HTTP ETag response header, and R2 rejects it in a conditional.
+	return { data, etag: object.etag };
 }
 
 /**
@@ -45,7 +47,7 @@ export async function savePieces(
 	if (!result) {
 		throw new ConflictError();
 	}
-	return { etag: result.httpEtag };
+	return { etag: result.etag };
 }
 
 /**

@@ -89,8 +89,23 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
       piece id and asset R2 keys (`src/lib/ids.ts`), uploads images to R2, then writes the piece via
       `updatePieces()` (`src/lib/data.ts` — the shared read-modify-write-with-retry helper other
       admin writes will reuse) and redirects to `/piece/<id>`. Verified end-to-end against local R2
-      emulation: successful submission, redirect, the new piece appearing on home/timeline/tag
-      pages, and validation errors on a bad submission.
+      emulation, including with an existing `pieces.json` present (the ETag conditional-write path).
+  - [x] "Select image" is the first field, with an on-select preview (`URL.createObjectURL`)
+  - [x] Title auto-suggested from the image filename (strip extension, hyphens/underscores,
+        digits, then title-case) — only fills if the title field is still empty, never clobbers
+        something already typed
+  - [x] Date defaults to today
+  - [x] Location is a Leaflet map (click to place a marker) instead of typing lat/lng, plus a
+        "use my current location" button that also fires automatically on page load
+  - [x] Tags show as clickable chips of every previously-used tag, sorted by frequency
+        (`getTagFrequency()` in `src/lib/facets.ts`), clicking appends to the tags field
+  - [ ] Location is still click-a-point-on-a-map only — no address/place-name text search yet.
+        Would need a geocoding API (e.g. Nominatim); worth adding if clicking the right spot on a
+        zoomed-out world map proves fiddly in practice
+  - [ ] Research: can useful metadata (GPS location, capture date, camera/lens, settings) be pulled
+        automatically from a photo's EXIF data — e.g. from an image exported out of Apple
+        Photos/iOS — to pre-fill date/location instead of relying on manual entry or device
+        geolocation at upload time? Investigate before building; not started
 - [ ] `/admin` edit form: load existing piece, edit any field, add/replace assets, delete a piece
 - [ ] `/admin` favorites reorder: numeric rank field per row, plain form submit
 - [ ] (Optional hardening) verify `Cf-Access-Authenticated-User-Email` header server-side in
