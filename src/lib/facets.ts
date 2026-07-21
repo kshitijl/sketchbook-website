@@ -37,6 +37,17 @@ export function getPiecesByDateDescending(data: PiecesData): Piece[] {
 	return [...data.pieces].sort((a, b) => (a.date < b.date ? 1 : -1));
 }
 
+/** A "rediscover something old" pick for the home page — random, not recent/favorite. */
+export function getRandomPieces(pieces: Piece[], count: number, excludeIds: ReadonlySet<string> = new Set()): Piece[] {
+	const pool = pieces.filter((p) => !excludeIds.has(p.id));
+	const shuffled = [...pool];
+	for (let i = shuffled.length - 1; i > 0; i--) {
+		const j = Math.floor(Math.random() * (i + 1));
+		[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+	}
+	return shuffled.slice(0, count);
+}
+
 export function getPiecesByPlace(data: PiecesData): Map<string, Piece[]> {
 	const byPlace = new Map<string, Piece[]>();
 	for (const piece of getPiecesByDateDescending(data)) {

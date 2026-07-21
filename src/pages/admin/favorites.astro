@@ -3,10 +3,16 @@ import { env } from 'cloudflare:workers';
 import Base from '../../layouts/Base.astro';
 import PieceThumb from '../../components/PieceThumb.astro';
 import { getPieces, updatePieces } from '../../lib/data';
+import { purgeEverything } from '../../lib/purge';
+import { isAuthorizedAdminRequest } from '../../lib/adminGuard';
 
 Astro.response.headers.set('Cache-Control', 'no-store');
 
 if (Astro.request.method === 'POST') {
+	if (!isAuthorizedAdminRequest(Astro.request, env)) {
+		return new Response('Forbidden', { status: 403 });
+	}
+
 	const formData = await Astro.request.formData();
 	const entries: { id: string; rank: number }[] = [];
 	for (const [key, value] of formData.entries()) {
@@ -31,6 +37,7 @@ if (Astro.request.method === 'POST') {
 			piece.favoriteRank = idx === -1 ? null : idx + 1;
 		}
 	});
+	await purgeEverything(env);
 
 	return Astro.redirect('/admin/favorites');
 }

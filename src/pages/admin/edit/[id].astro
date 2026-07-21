@@ -7,6 +7,8 @@ import { generateAssetId, buildAssetKey } from '../../../lib/ids';
 import { getImageDimensions } from '../../../lib/imageDimensions';
 import { ASSET_KIND_FIELDS } from '../../../lib/assetKinds';
 import { imageUrl } from '../../../lib/images';
+import { purgeEverything } from '../../../lib/purge';
+import { isAuthorizedAdminRequest } from '../../../lib/adminGuard';
 import type { AssetKind, Stage } from '../../../lib/types';
 
 Astro.response.headers.set('Cache-Control', 'no-store');
@@ -45,12 +47,17 @@ let values = piece
 		};
 
 if (piece && Astro.request.method === 'POST') {
+	if (!isAuthorizedAdminRequest(Astro.request, env)) {
+		return new Response('Forbidden', { status: 403 });
+	}
+
 	const formData = await Astro.request.formData();
 
 	if (formData.get('intent') === 'delete') {
 		await updatePieces(env.ART_BUCKET, (d) => {
 			d.pieces = d.pieces.filter((p) => p.id !== piece.id);
 		});
+		await purgeEverything(env);
 		return Astro.redirect('/admin');
 	}
 
@@ -144,6 +151,7 @@ if (piece && Astro.request.method === 'POST') {
 				}
 			}
 		});
+		await purgeEverything(env);
 
 		return Astro.redirect(`/piece/${piece.id}`);
 	}

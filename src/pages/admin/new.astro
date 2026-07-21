@@ -6,6 +6,8 @@ import { getTagFrequency } from '../../lib/facets';
 import { generateAssetId, generatePieceId, buildAssetKey } from '../../lib/ids';
 import { getImageDimensions } from '../../lib/imageDimensions';
 import { ASSET_KIND_FIELDS } from '../../lib/assetKinds';
+import { purgeEverything } from '../../lib/purge';
+import { isAuthorizedAdminRequest } from '../../lib/adminGuard';
 import type { Asset, Piece, Stage } from '../../lib/types';
 
 Astro.response.headers.set('Cache-Control', 'no-store');
@@ -31,6 +33,10 @@ let values = {
 };
 
 if (Astro.request.method === 'POST') {
+	if (!isAuthorizedAdminRequest(Astro.request, env)) {
+		return new Response('Forbidden', { status: 403 });
+	}
+
 	const formData = await Astro.request.formData();
 
 	values = {
@@ -104,6 +110,7 @@ if (Astro.request.method === 'POST') {
 		await updatePieces(env.ART_BUCKET, (data) => {
 			data.pieces.push(piece);
 		});
+		await purgeEverything(env);
 
 		return Astro.redirect(`/piece/${newId}`);
 	}

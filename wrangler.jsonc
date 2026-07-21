@@ -16,5 +16,14 @@
 			"binding": "ART_BUCKET",
 			"bucket_name": "31-art-website-data"
 		}
-	]
+	],
+	// Placeholder values on purpose: empty here means the purge-on-write call and the Access
+	// defense-in-depth check both no-op (see src/lib/purge.ts, src/lib/adminGuard.ts). Real
+	// values get set as Worker secrets during the Cloudflare setup pass (`wrangler secret put`),
+	// which override these at deploy time — no code changes needed to activate either feature.
+	"vars": {
+		"CF_API_TOKEN": "",
+		"CF_ZONE_ID": "",
+		"ADMIN_EMAIL": ""
+	}
 }

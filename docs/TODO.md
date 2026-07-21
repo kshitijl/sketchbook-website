@@ -36,8 +36,14 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
 - [x] `/` home — favorites (by `favoriteRank`), recent pieces (by `date`); reads live from R2,
       verified against an empty bucket. Still needed: pinned quick-links content once any exist,
       phase density indicator
-- [ ] Home page: also show a small section of randomly-picked pieces (not just favorites/recent) —
-      a "rediscover something old" section
+- [x] Home page "Rediscover" section: `getRandomPieces()` in `src/lib/facets.ts`, excludes whatever
+      is already in "Recent" so it doesn't just repeat it. Worth noting: this is picked at *render*
+      time, which under the purge-on-write cache policy only happens right after an edit or for a
+      new edge location — so it's "a random pick that changes when you edit something," not
+      "re-randomized every visit." Intentional trade against the caching model, documented in a
+      code comment. Verified: correctly hidden right now since there are only 5 total pieces and
+      all of them are already in "Recent" (nothing left to pick from) — will populate once there
+      are more than 12.
 - [x] "Paintings done" counter (meant to be motivating: "175 lifetime, 25 this year, 75 more to
       100"): `isPainting()` and `getPaintingStats()` in `src/lib/facets.ts`, rendered as a section
       on the home page. **Working definition of "painting", not yet confirmed with the artist**:
@@ -162,13 +168,20 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
       ranks rather than requiring perfectly sequential input. Verified end-to-end: setting ranks,
       leaving one blank, and confirming the home page's Favorites section reflects the new order
       and excludes the blank one.
-- [ ] (Optional hardening) verify `Cf-Access-Authenticated-User-Email` header server-side in
-      mutation handlers as defense-in-depth
-- [ ] Create a Cloudflare API token scoped to Cache Purge for this zone; store it and the zone ID
-      as Worker secrets (`wrangler secret put`)
-- [ ] After every successful admin write (post-conditional-PUT), call Cloudflare's purge API with
-      `purge_everything: true`. Treat as best-effort/fire-and-forget — log failures, don't fail the
-      write itself, since a missed purge self-heals on the next edit's purge anyway
+- [x] Defense-in-depth `Cf-Access-Authenticated-User-Email` check — `src/lib/adminGuard.ts`'s
+      `isAuthorizedAdminRequest()`, called at the top of every mutation handler (new/edit/delete/
+      favorites). **No-ops (always allows) until `ADMIN_EMAIL` is a real value** — it's declared as
+      an empty-string placeholder in `wrangler.jsonc`'s `vars` right now so types generate cleanly;
+      a real Worker secret overrides it at deploy time. Verified this doesn't block local writes
+      (which it shouldn't, since Access itself is the real gate and doesn't exist locally).
+- [x] Purge-on-write — `src/lib/purge.ts`'s `purgeEverything()`, called after every successful
+      mutation. Same pattern: **no-ops until `CF_API_TOKEN`/`CF_ZONE_ID` are real values**
+      (currently empty-string placeholders in `wrangler.jsonc`). Best-effort/fire-and-forget —
+      failures are swallowed, not surfaced, since a missed purge self-heals on the next write's
+      purge regardless of what that write touched.
+- [ ] Still to do during the Cloudflare setup pass: create the Cache-Purge-scoped API token and
+      note the zone ID, decide the real `ADMIN_EMAIL`, and set all three as Worker secrets
+      (`wrangler secret put`) — no code changes needed, both features activate automatically
 
 ## Phase 6 — Polish
 - [ ] Visual design pass: palette (pastels, purple/pink/red), typography, overall aesthetic
