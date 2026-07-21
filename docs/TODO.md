@@ -60,8 +60,8 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
 - [x] Uniform `Cache-Control: public, max-age=60, s-maxage=2592000` applied to every page built so
       far — still need to apply it to the `data/pieces.json` fetch route once the map island needs
       it (Phase 4)
-- [ ] 404 page — currently just a 404 status + inline message on `/piece/[id]` and `/kind/[kind]`;
-      a real Astro `404.astro` catch-all for unmatched routes generally is still needed
+- [x] 404 page (`src/pages/404.astro`) for unmatched routes generally, on top of the existing
+      404 status + inline message already on `/piece/[id]` and `/kind/[kind]` for a bad id/kind
 - [x] Verified all routes (200s, and 404s for a missing piece / bad kind) end-to-end under
       `wrangler dev` against the real Workers runtime
 
