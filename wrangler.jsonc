@@ -17,6 +17,14 @@
 			"bucket_name": "31-art-website-data"
 		}
 	],
+	// Explicit on purpose: the Astro Cloudflare adapter regenerates its own deploy-time config
+	// (dist/server/wrangler.json) from this file and does NOT carry through a "routes" field —
+	// tested and confirmed. The custom domain is attached via `wrangler deploy --domain
+	// klauria.art` instead (see docs/TODO.md for the current blocker on that). Keeping
+	// workers_dev explicit here means it can never be silently disabled by an unrelated flag
+	// the way it was on a `--domain` deploy attempt that then failed (a real incident during
+	// setup — the site went down until this was made explicit and redeployed).
+	"workers_dev": true,
 	// Placeholder values on purpose: empty here means the purge-on-write call and the Access
 	// defense-in-depth check both no-op (see src/lib/purge.ts, src/lib/adminGuard.ts). Real
 	// values get set as Worker secrets during the Cloudflare setup pass (`wrangler secret put`),

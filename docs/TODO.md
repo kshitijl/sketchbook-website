@@ -12,11 +12,34 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
 - [x] Confirm local dev works with bindings: verified under both `astro dev` and `wrangler dev`
       (real Workers runtime) against the local-emulated `ART_BUCKET`
 - [x] Add `.gitignore` for `node_modules`, `.astro`, `dist`, `.wrangler`
-- [ ] Decide and record the production custom domain / route. **Confirmed by observation, not just
-      theory**: the deployed `workers.dev` URL has no `CF-Cache-Status` header at all — Cache
-      Rules genuinely don't apply there (it's not a zone in this account), so the entire
-      purge-on-write/edge-cache design cannot take effect until this site is on a real (sub)domain.
-      `workers.dev` is fine for functional testing in the meantime, just not for verifying caching.
+- [x] Domain decided: **klauria.art**. Zone added to Cloudflare and active (nameservers switched
+      from Namecheap, confirmed via API — `alina.ns.cloudflare.com` / `jarred.ns.cloudflare.com`).
+      **Confirmed by observation, not just theory**: the `workers.dev` URL has no `CF-Cache-Status`
+      header at all — Cache Rules genuinely don't apply there (not a zone in this account), so the
+      entire purge-on-write/edge-cache design cannot take effect until this site is on the real
+      domain. `workers.dev` is fine for functional testing meanwhile, just not for verifying caching.
+- [ ] **Blocked on a dashboard action only the domain owner can do** — attaching the Custom Domain
+      failed with a 409 Conflict: `klauria.art` (and `www.klauria.art`) already have Cloudflare-
+      proxied A/AAAA records (imported from Namecheap's default parking setup when the zone was
+      added), which occupy the hostname before a Custom Domain can claim it. My Cloudflare
+      credential (wrangler's OAuth token) can read zone info but is refused (`Authentication
+      error`) on the DNS-records API endpoint, so I can't remove these myself. **To unblock**: in
+      the Cloudflare dashboard, DNS tab for klauria.art, delete the existing A/AAAA records at the
+      apex (`klauria.art`, and `www` if you want that too) — do **not** touch the MX/TXT records,
+      those are Namecheap's email forwarding for this domain and are unrelated/still wanted. Then
+      either re-run `wrangler deploy --domain klauria.art`, or just use the dashboard's own "Add
+      Custom Domain" flow (Workers & Pages → 31-art-website → Settings → Domains & Routes), which
+      prompts to replace a conflicting record automatically instead of just failing like the API
+      does.
+  - [ ] **Incident during setup, self-inflicted and self-corrected**: the first `--domain`
+        attempt implicitly disabled `workers_dev` (a wrangler default when `--domain` is passed
+        and `workers_dev` isn't explicit), and when the domain attach then failed, the site was
+        briefly down on *both* URLs. Fixed by adding `"workers_dev": true` explicitly to
+        `wrangler.jsonc` and redeploying — confirmed back up immediately, and this can't recur
+        since it's no longer implicit. Also confirmed (by inspecting the generated
+        `dist/server/wrangler.json`) that a `"routes"` field in `wrangler.jsonc` is silently
+        dropped by the Astro Cloudflare adapter's deploy-config generation — the `--domain` CLI
+        flag is the correct mechanism for this adapter, not the config file field.
 
 ## Phase 1 — Data layer
 - [x] Define the piece record TypeScript type (`stage`, `location`, `tags`, `notes`, `favoriteRank`,
