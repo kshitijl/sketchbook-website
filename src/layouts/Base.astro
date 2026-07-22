@@ -6,7 +6,7 @@ interface Props {
 	/** Open Graph/Twitter image — must be an absolute URL (relative ones aren't valid OG images). */
 	image?: string;
 }
-const { title, description = 'Sketches and paintings from on-location drawing sessions.', image } =
+const { title, description = "I draw and paint from life, in a sketchbook. It's how I look at things.", image } =
 	Astro.props;
 
 // Debug footer: if reloading the same URL keeps showing the same renderId, that request was
@@ -39,7 +39,7 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
 				--mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-				--bg: #f4f2ec;
+				--bg: #ffffff;
 				--panel: #ffffff;
 				--text: #141414;
 				--text-muted: #6b6b6b;
@@ -50,7 +50,7 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 				   must use the exact same inset or they visibly don't line up on their left edge
 				   (confirmed against juddmercer.art's own CSS: a single `--pagePadding` variable
 				   drives both its header and its content sections the same way). */
-				--gutter: 4vw;
+				--gutter: 6vw;
 			}
 			* {
 				box-sizing: border-box;
@@ -446,17 +446,19 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 	</head>
 	<body>
 		<header class="site-header">
-			<a href="/" class="site-title">Sketches &amp; Paintings</a>
+			<a href="/" class="site-title">Lauria's Sketchbook</a>
 			<input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="Menu" />
 			<label for="nav-toggle" class="nav-toggle-label"><span></span><span></span><span></span></label>
 			<nav>
 				<a href="/">Home</a>
 				<a href="/kind/setup">My easel setup</a>
+				<a href={`/tag/${encodeURIComponent('sierra trip')}`}>High Sierra Trip</a>
 			</nav>
 		</header>
 		<slot />
 		<footer class="debug" data-render-id={renderId}>
-			rendered {renderedAt} · edge: {colo} · id: {renderId} · <a href="/admin">Admin</a>
+			rendered {renderedAt} · edge: {colo} · id: {renderId} · <a href="/admin">Admin</a> ·{' '}
+			<a href="/admin/new">Add new piece</a>
 		</footer>
 	</body>
 </html>

@@ -3,7 +3,7 @@ import { env } from 'cloudflare:workers';
 import Base from '../../layouts/Base.astro';
 import { getPieces } from '../../lib/data';
 import { getPieceById, getPrimaryAsset, orderAssetsFinalFirst } from '../../lib/facets';
-import { imageUrl } from '../../lib/images';
+import { imageUrl, originalImageUrl } from '../../lib/images';
 import { PAGE_CACHE_CONTROL } from '../../lib/cache';
 
 Astro.response.headers.set('Cache-Control', PAGE_CACHE_CONTROL);
@@ -21,7 +21,7 @@ const orderedAssets = piece ? orderAssetsFinalFirst(piece.assets) : [];
 // Open Graph needs an absolute image URL — derived from the current request's own origin so it's
 // correct whether this is served from workers.dev or the eventual custom domain.
 const primaryAsset = piece ? getPrimaryAsset(piece) : undefined;
-const ogImage = primaryAsset ? new URL(imageUrl(primaryAsset.r2Key), Astro.url).toString() : undefined;
+const ogImage = primaryAsset ? new URL(imageUrl(primaryAsset.r2Key, 'card'), Astro.url).toString() : undefined;
 const ogDescription = piece
 	? piece.notes || `${piece.date} · ${piece.stage} · ${piece.location.placeName}`
 	: undefined;
@@ -44,13 +44,16 @@ const ogDescription = piece
 			{orderedAssets.map((asset) => (
 				<figure style="margin:0 0 1rem 0;">
 					<img
-						src={imageUrl(asset.r2Key)}
+						src={imageUrl(asset.r2Key, 'big')}
 						alt={asset.caption || `${piece.title} (${asset.kind})`}
 						width={asset.width || undefined}
 						height={asset.height || undefined}
 						style="max-width:100%; max-height:85vh; width:auto; height:auto;"
 					/>
-					<figcaption>{asset.kind}{asset.caption ? ` — ${asset.caption}` : ''}</figcaption>
+					<figcaption>
+						{asset.kind}{asset.caption ? ` — ${asset.caption}` : ''}
+						{' — '}<a href={originalImageUrl(asset.r2Key)}>View full resolution</a>
+					</figcaption>
 				</figure>
 			))}
 

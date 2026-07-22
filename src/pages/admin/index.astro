@@ -28,11 +28,6 @@ const recentBackupLog = await getRecentBackupLog(env.BACKUP_BUCKET, 10);
 	</p>
 
 	<section>
-		<h2>Backups — last {recentBackupLog.length}</h2>
-		<BackupLog entries={recentBackupLog} />
-	</section>
-
-	<section>
 		<h2>Pieces</h2>
 		{pieces.length === 0 ? (
 			<p><em>Nothing uploaded yet.</em></p>
@@ -47,5 +42,10 @@ const recentBackupLog = await getRecentBackupLog(env.BACKUP_BUCKET, 10);
 				))}
 			</ul>
 		)}
+	</section>
+
+	<section>
+		<h2>Backups — last {recentBackupLog.length}</h2>
+		<BackupLog entries={recentBackupLog} />
 	</section>
 </Base>

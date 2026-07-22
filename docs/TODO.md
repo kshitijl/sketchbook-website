@@ -664,5 +664,85 @@ More explicit feedback after actually using the redesigned site on a phone.
       corrected map approaches — each was actually deployed and checked before being told it was
       wrong and replaced, not just designed on paper).
 
+## Home page redesign, round 4: naming, small polish, a real dedup bug (2026-07-22)
+- [x] Site renamed "Sketches & Paintings" → "Lauria's Sketchbook" everywhere it appeared (header
+      site-title, page/tab title, OG title).
+- [x] Added the intro blurb ("I draw and paint from life, in a sketchbook. It's how I look at
+      things.") right before the first gallery on the home page, and reused the same text as the
+      default meta/OG description — mirroring how juddmercer.art's own bio blurb doubles as its
+      description.
+- [x] Admin: swapped section order so **Pieces** now renders above **Backups** (was the reverse).
+- [x] Footer: added an "Add new piece" link right next to Admin, so uploading one piece and then
+      immediately wanting to add another doesn't require navigating away first.
+- [x] Hamburger nav: added "High Sierra Trip" alongside "My easel setup", linking to
+      `/tag/sierra%20trip` (`encodeURIComponent('sierra trip')`) — same fixed-link pattern, no new
+      mechanism needed.
+- [x] **Real bug: Favorites/Recent/Rediscover could all show the same piece more than once on the
+      home page.** The `shown` id-tracking set used to exclude duplicates across Recent/Rediscover
+      batches was never seeded with favorites' ids, and Recent was sliced directly from the full
+      date-sorted list rather than a favorites-excluded pool — so a piece that was both a favorite
+      and recent (very plausible, especially with few total pieces) appeared twice. Fixed by
+      seeding `shown` with favorites first and deriving Recent's pool by filtering out anything
+      already shown, before slicing. `allByDate` itself stays the complete, unfiltered list, since
+      the Timeline still needs every piece regardless of favorite status.
+- [x] Background changed from cream (`#f4f2ec`) to white; the shared `--gutter` bumped from `4vw`
+      to `6vw` for a bit more breathing room on desktop. Deliberately did **not** touch `body`'s
+      `max-width` to get more padding — that's the exact variable that caused the earlier
+      text/image alignment bug, so only `--gutter` (which both `body`'s padding and the gallery's
+      inset already reference) was touched, keeping the two locked together by construction rather
+      than by coincidence.
+
+## Image resizing: a small fixed set of buckets via the Images binding (2026-07-22)
+Every image on the site was the original full-resolution upload, always, everywhere — a 140px
+thumbnail and the full-bleed hero image both shipped the exact same bytes, with the browser doing
+all the downscaling. Prompted by a direct question ("are we doing the thing where Cloudflare
+resizes images automagically... or is that not happening anywhere rn") — it wasn't.
+- [x] **Corrected the original plan from early in the project**: the assumption on record
+      (docs/architecture.md, docs/TODO.md Phase 3) was Cloudflare Image Transformations via the
+      `/cdn-cgi/image/width=...,format=auto/...` URL-rewriting pattern, deferred specifically
+      because that mechanism only works on the real deployed edge, not local dev. Turns out
+      there's a different, newer mechanism already halfway wired in without anyone asking for it:
+      the Cloudflare **Images binding** (`env.IMAGES`) — confirmed present in the generated deploy
+      config (`{"images":{"binding":"IMAGES"}}`) even though nothing in this project's own
+      `wrangler.jsonc` declares it; the `@astrojs/cloudflare` adapter auto-provisions it (likely
+      for its own `astro:assets` pipeline — the same auto-provisioning that caused the Leaflet
+      marker-icon PNG-import bug earlier this session). Confirmed via direct doc research that this
+      binding **does** work in local dev's "low-fidelity" mode for exactly what's needed here
+      (`width`/`height`/`rotate`/`format`), unlike the URL-based approach — this is what actually
+      unblocked building it now instead of continuing to defer it.
+- [x] Three fixed size buckets (`src/lib/images.ts`'s `SIZE_WIDTHS`), not one arbitrary width per
+      container — `thumb` (240px), `card` (1000px), `big` (1800px). Named "big," not "full," on
+      explicit correction — "full" reads as "the original," which this deliberately is not.
+      Keeping the bucket set small and fixed matters for cost/cache reasons: Cloudflare Images
+      bills, and Workers Cache caches, each unique (source image, size) combination separately, so
+      an arbitrary per-breakpoint width would fragment across far more variants than needed.
+- [x] `imageUrl(r2Key, size)` — `size` is **required**, no default, so every call site is a
+      deliberate choice: `thumb` for admin's `PieceThumb` and the map's hover popup; `card` for the
+      big gallery grid everywhere it appears (including the OG/Twitter image); `big` for
+      `/piece/<id>`'s main view, the map's inline detail panel, the timeline gallery frame, and
+      specifically the one `heroFirst` opening image (it renders far larger than an ordinary card,
+      so a card-sized source would look soft blown up that wide).
+- [x] **The true, untransformed original stays reachable** — `/img/<r2Key>` with no `size` query
+      param is completely unchanged from before this feature (`originalImageUrl()` in
+      `src/lib/images.ts`). A "View full resolution" link now appears next to every asset on
+      `/piece/<id>`, pointing straight at it. Public, not admin-gated — this is a personal archive,
+      not a print-sales site, and anyone wanting real brush detail (or the artist wanting their own
+      file back) shouldn't need to log in for it.
+- [x] `src/pages/img/[...key].ts` extended: a valid `?size=` on an image content-type runs
+      `env.IMAGES.input(object.body).transform({width, fit: 'scale-down'}).output({format:
+      'image/webp'})`; anything else (no param, invalid value, non-image content-type, or the
+      transform throwing) falls through to the untouched original. On a transform failure
+      specifically, re-fetches a fresh R2 object rather than reusing `object.body`, since a failed
+      transform may have already partially consumed that stream — returning it as-is at that point
+      risked a truncated response.
+- [x] Verified locally first (content-type changed `image/png` → `image/webp`, and the actual
+      output pixel dimensions — checked directly, not assumed — matched the requested bucket
+      width exactly), then against real production content: a genuine 5,011,202-byte / 5697×4007
+      iPhone photo came back at 2,125,324 bytes for `big` (−58%), 745,980 for `card` (−85%), and
+      47,878 for `thumb` (−99%).
+- [x] `env.IMAGES` typed via the existing `src/env.d.ts` declaration-merge pattern (same approach
+      already used for `ADMIN_EMAIL`/`DEPLOY_PURGE_TOKEN`) — `ImagesBinding` itself is already
+      ambient from the Cloudflare Workers types, just needed adding to `Env`/`Cloudflare.Env`.
+
 ## Phase 7 — Content migration
 Owner is doing this manually via `/admin/new`, not an agent task.

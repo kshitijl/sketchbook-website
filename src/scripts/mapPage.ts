@@ -45,7 +45,7 @@ function renderDetail(piece: Piece): string {
 	const imagesHtml = ordered
 		.map((asset) => {
 			const dims = asset.width && asset.height ? ` width="${asset.width}" height="${asset.height}"` : '';
-			return `<figure style="margin:0 0 1rem 0;"><img src="${imageUrl(asset.r2Key)}" alt="${escapeHtml(piece.title)}"${dims} style="max-width:100%; max-height:85vh; width:auto; height:auto;" /><figcaption>${escapeHtml(asset.kind)}</figcaption></figure>`;
+			return `<figure style="margin:0 0 1rem 0;"><img src="${imageUrl(asset.r2Key, 'big')}" alt="${escapeHtml(piece.title)}"${dims} style="max-width:100%; max-height:85vh; width:auto; height:auto;" /><figcaption>${escapeHtml(asset.kind)}</figcaption></figure>`;
 		})
 		.join('');
 	const tagsHtml = piece.tags.map((t) => `<a href="/tag/${encodeURIComponent(t)}">#${escapeHtml(t)}</a>`).join(' ');
@@ -94,7 +94,7 @@ export function setupMap(): void {
 
 		const primary = getPrimaryAsset(piece);
 		const popupHtml = primary
-			? `<strong>${escapeHtml(piece.title)}</strong><br /><img src="${imageUrl(primary.r2Key)}" alt="${escapeHtml(piece.title)}" style="width:120px; height:auto; margin-top:0.25rem;" />`
+			? `<strong>${escapeHtml(piece.title)}</strong><br /><img src="${imageUrl(primary.r2Key, 'thumb')}" alt="${escapeHtml(piece.title)}" style="width:120px; height:auto; margin-top:0.25rem;" />`
 			: `<strong>${escapeHtml(piece.title)}</strong>`;
 		marker.bindPopup(popupHtml);
 

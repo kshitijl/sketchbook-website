@@ -282,7 +282,7 @@ if (piece && Astro.request.method === 'POST') {
 							{existingForKind.map((asset) => (
 								<div style="margin:0.5rem 0;">
 									<img
-										src={imageUrl(asset.r2Key)}
+										src={imageUrl(asset.r2Key, 'thumb')}
 										alt={label}
 										style="max-width:200px; max-height:200px; display:block;"
 									/>

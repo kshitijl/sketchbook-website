@@ -17,12 +17,15 @@ const { pieces, large = false, heroFirst = false } = Astro.props;
 ---
 
 <ul class:list={['piece-grid', { large, 'hero-first': heroFirst }]}>
-	{pieces.map((piece) => {
+	{pieces.map((piece, index) => {
 		const asset = getPrimaryAsset(piece);
+		// The hero-first opening image renders much larger on screen (spans the full row) than
+		// an ordinary card, so it needs the bigger source to still look sharp.
+		const size = heroFirst && index === 0 ? 'big' : 'card';
 		return (
 			<li>
 				<a href={`/piece/${piece.id}`}>
-					{asset && <img src={imageUrl(asset.r2Key)} alt={piece.title} loading="lazy" />}
+					{asset && <img src={imageUrl(asset.r2Key, size)} alt={piece.title} loading="lazy" />}
 					<span class="caption">{piece.title} — {piece.date}</span>
 				</a>
 			</li>

@@ -13,7 +13,7 @@ const asset = getPrimaryAsset(piece);
 
 {asset && (
 	<img
-		src={imageUrl(asset.r2Key)}
+		src={imageUrl(asset.r2Key, 'thumb')}
 		alt={piece.title}
 		width={size}
 		height={size}

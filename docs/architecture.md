@@ -258,21 +258,45 @@ account being compromised or suspended, not just an app bug) — a strictly larg
 model than "bugs in this code" than what was asked for. Worth considering later if wanted, not
 built now.
 
-## Images: R2, served as-is for now
+## Images: R2 + on-demand resizing via the Images binding
 
-Originals land in R2 (zero egress fees, ~$0.015/GB/mo), served directly by `src/pages/img/[...key].ts`
-— a plain passthrough (`imageUrl(r2Key)` → `/img/<r2Key>`) with a long immutable `Cache-Control`,
-safe since keys are versioned and never reused. **Not yet resized/transcoded** — the original plan
-was to request the same R2 object through a Cloudflare Image Transformation URL
-(`/cdn-cgi/image/width=...,format=auto/...`) for on-demand resizing and AVIF/WebP re-encoding, but
-that URL pattern only works on Cloudflare's real edge network, not in local dev, so it's never been
-verified and hasn't been wired in. Every page currently ships the original full-resolution file;
-revisit once file sizes in practice make that worth fixing (see docs/TODO.md).
+Originals land in R2 (zero egress fees, ~$0.015/GB/mo). Serving them goes through
+`src/pages/img/[...key].ts`, which does one of two things depending on the request:
 
-Client-side sizing (not server-side resizing) is what currently keeps big images from being
-unusably huge on screen: pages that show a full image constrain it with CSS (`max-width`/
-`max-height`, see the Visual design section) rather than requesting a smaller file — the browser
-still downloads the original bytes either way.
+- **No `?size=` query param** → the untouched original, byte-for-byte, exactly as uploaded. This is
+  `originalImageUrl(r2Key)` in `src/lib/images.ts` — used sparingly, e.g. the "View full
+  resolution" link on `/piece/<id>`, never for anything embedded directly on a page.
+- **`?size=thumb|card|big`** → resized and re-encoded to WebP on the fly via the Cloudflare
+  **Images binding** (`env.IMAGES` — not the older `/cdn-cgi/image/...` URL-rewriting mechanism
+  originally planned; the Cloudflare adapter auto-provisions this binding, confirmed by inspecting
+  the generated deploy config, even though it isn't declared in this project's own
+  `wrangler.jsonc`). Falls back to serving the untransformed original on any transform failure
+  (corrupt file, unsupported format, etc.) — best-effort, matching the pattern used elsewhere in
+  this codebase for things that shouldn't be allowed to break the request they're shadowing.
+
+**Sizes are a small fixed set of buckets, not one arbitrary width per container** —
+`SIZE_WIDTHS` in `src/lib/images.ts`: `thumb` (240px, admin thumbnails / map hover popup), `card`
+(1000px, the big gallery grid everywhere it appears, and the OG/Twitter card image), `big` (1800px,
+`/piece/<id>`'s full view, the map's inline detail panel, the timeline gallery frame, and the one
+`heroFirst` opening image specifically, since it renders much larger than an ordinary card).
+`imageUrl(r2Key, size)` takes size as a **required** argument — no default — so every call site is
+a conscious choice rather than silently inheriting whatever a default happened to be. A fixed
+bucket set also keeps the number of distinct (source image, size) combinations bounded, which
+matters because Cloudflare Images bills and Workers Cache caches each unique combination
+separately — an arbitrary width per breakpoint would fragment across far more variants than
+actually needed.
+
+**This works in local dev, unlike the URL-rewriting approach** — confirmed directly (not assumed):
+`wrangler dev`/`astro dev` support a "low-fidelity" mode of the Images binding covering exactly
+`width`/`height`/`rotate`/`format`, which is all this needs. Verified locally against a real
+request (content-type changed from `image/png` to `image/webp`, and the output's actual pixel
+dimensions matched the requested bucket width) before ever deploying.
+
+**Real-world confirmation against production** (a 5,011,202-byte / 5697×4007 iPhone photo):
+`big` → 2,125,324 bytes (−58%), `card` → 745,980 bytes (−85%), `thumb` → 47,878 bytes (−99%). All
+three fall back correctly to the untransformed original on an invalid/missing `size` value or a
+transform error, and re-fetch a fresh R2 read for that fallback rather than risk returning a
+partially-consumed stream if the transform attempt had already started reading it.
 
 ## Auth: Cloudflare Access + Google
 
@@ -477,7 +501,5 @@ scrubber colored by this classification, not a static chart).
 - Whether to keep `/deploy-purge` as standing infrastructure, given it exists to work around a real
   gap (deploys don't purge the cache on their own — see Cache policy) rather than being originally
   designed in.
-- Cloudflare Image Transformations for on-demand resizing (see Images section) — still just a plain
-  passthrough of the original file today.
 - Removing the now-fully-dead `pinnedLinks` field/type, and the general codebase complexity audit
   the owner asked for — tracked in docs/TODO.md's standing simplicity-audit section, not done yet.

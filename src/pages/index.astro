@@ -17,18 +17,27 @@ const favorites = data.pieces
 	.filter((p): p is Piece & { favoriteRank: number } => p.favoriteRank !== null)
 	.sort((a, b) => a.favoriteRank - b.favoriteRank);
 
+// `allByDate` stays the *complete* list (favorites included) — the Timeline further down needs
+// every piece regardless of favorite status. Everything else on this page must not repeat a piece
+// already shown elsewhere on it, so `shown` tracks every id already placed into a batch, seeded
+// with favorites first since those render before anything else.
+const allByDate = getPiecesByDateDescending(data);
+const shown = new Set(favorites.map((p) => p.id));
+
 // Split into a few smaller batches rather than one big block, so real art keeps showing up
 // between the map/timeline/tags sections instead of being front-loaded into a single wall of
 // images followed by all the "explore by X" tools in a row.
-const allByDate = getPiecesByDateDescending(data);
-const recentA = allByDate.slice(0, 6);
-const recentB = allByDate.slice(6, 12);
+const recentPool = allByDate.filter((p) => !shown.has(p.id));
+const recentA = recentPool.slice(0, 6);
+const recentB = recentPool.slice(6, 12);
+recentA.forEach((p) => shown.add(p.id));
+recentB.forEach((p) => shown.add(p.id));
+
 // Picked at render time, which — per the purge-on-write cache policy — only happens right after
 // an edit or for the first visitor at a given edge location. So this is "a random pick that
 // changes whenever you edit something," not "re-randomized on every single visit." That's an
 // intentional trade against the caching model, not a bug: a truly per-visit random pick would
 // mean rendering (and therefore not caching) this page on every request.
-const shown = new Set(allByDate.slice(0, 12).map((p) => p.id));
 const rediscoverA = getRandomPieces(data.pieces, 6, shown);
 rediscoverA.forEach((p) => shown.add(p.id));
 const rediscoverB = getRandomPieces(data.pieces, 6, shown);
@@ -80,13 +89,15 @@ const timelineJson = JSON.stringify(
 		month,
 		pieces: bucket.pieces.map((p) => {
 			const asset = getPrimaryAsset(p);
-			return { id: p.id, title: p.title, date: p.date, imageUrl: asset ? imageUrl(asset.r2Key) : '' };
+			return { id: p.id, title: p.title, date: p.date, imageUrl: asset ? imageUrl(asset.r2Key, 'big') : '' };
 		})
 	}))
 ).replace(/</g, '\\u003c');
 ---
 
-<Base title="Sketches & paintings">
+<Base title="Lauria's Sketchbook">
+	<p>I draw and paint from life, in a sketchbook. It's how I look at things.</p>
+
 	{favorites.length > 0 && <PieceList pieces={favorites} large heroFirst />}
 
 	{recentA.length > 0 ? (
