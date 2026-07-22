@@ -69,9 +69,10 @@ if (Astro.request.method === 'POST') {
 	// every provided file server-side too, so a wrong file type fails clearly instead of silently
 	// uploading something an <img> tag can't display.
 	for (const { field, label } of ASSET_KIND_FIELDS) {
-		const file = formData.get(field);
-		if (file instanceof File && file.size > 0 && !file.type.startsWith('image/')) {
-			errors.push(`${label}: "${file.name}" doesn't look like an image (${file.type || 'unknown type'}).`);
+		for (const file of formData.getAll(field)) {
+			if (file instanceof File && file.size > 0 && !file.type.startsWith('image/')) {
+				errors.push(`${label}: "${file.name}" doesn't look like an image (${file.type || 'unknown type'}).`);
+			}
 		}
 	}
 
@@ -93,8 +94,8 @@ if (Astro.request.method === 'POST') {
 		let imagesBackedUp = 0;
 		const backupErrors: string[] = [];
 		for (const { kind, field } of ASSET_KIND_FIELDS) {
-			const file = formData.get(field);
-			if (file instanceof File && file.size > 0) {
+			for (const file of formData.getAll(field)) {
+				if (!(file instanceof File) || file.size === 0) continue;
 				const assetId = generateAssetId(existingAssetIds);
 				existingAssetIds.add(assetId);
 				const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
@@ -146,7 +147,7 @@ if (Astro.request.method === 'POST') {
 			metadataSnapshotTaken,
 			errors: backupErrors
 		}).catch(() => {});
-		await purgeEverything(env);
+		await purgeEverything();
 
 		return Astro.redirect(`/piece/${newId}`);
 	}
@@ -187,7 +188,7 @@ if (Astro.request.method === 'POST') {
 			<label>Title<br /><input type="text" id="titleInput" name="title" value={values.title} required /></label>
 		</p>
 		<p>
-			<label>Date<br /><input type="date" name="date" value={values.date} required /></label>
+			<label>Date<br /><input type="date" id="dateInput" name="date" value={values.date} required /></label>
 		</p>
 		<p>
 			<label>Stage<br />
@@ -202,8 +203,12 @@ if (Astro.request.method === 'POST') {
 			<strong>Location</strong><br />
 			<input type="hidden" id="latInput" name="lat" value={values.lat} />
 			<input type="hidden" id="lngInput" name="lng" value={values.lng} />
+			<input type="text" id="locationSearchInput" placeholder="Search for a place (e.g. Prospect Park)" />
+			<button type="button" id="locationSearchBtn">Search</button>
+			<br />
 			<button type="button" id="useCurrentLocationBtn">Use my current location</button>
-			<span id="locationReadout">No location selected yet — click the map or use the button above.</span>
+			<span id="locationReadout">No location selected yet — click the map, search, or use the button above.</span>
+			<span id="locationSearchStatus" style="display:block; color:var(--text-muted); font-size:0.85rem;"></span>
 			<div id="locationMap" style="height:280px; margin-top:0.5rem;"></div>
 		</p>
 		<p>
@@ -232,13 +237,14 @@ if (Astro.request.method === 'POST') {
 			{otherAssetFields.map(({ field, label }) => (
 				<p>
 					<label>
-						{label}<br />
+						{label} (you can select more than one)<br />
 						<input
 							type="file"
 							class="asset-preview-input"
 							data-preview-id={`preview-${field}`}
 							name={field}
 							accept="image/*"
+							multiple
 						/>
 					</label>
 					<br />

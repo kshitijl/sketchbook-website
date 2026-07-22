@@ -22,7 +22,7 @@ if (!baseUrl) {
 	process.exit(1);
 }
 
-const PATHS_TO_CHECK = ['/', '/timeline', '/browse', '/map'];
+const PATHS_TO_CHECK = ['/', '/kind/setup'];
 
 function extractRenderId(html) {
 	const match = html.match(/data-render-id="([^"]+)"/);

@@ -26,8 +26,8 @@ favorites) **without a git-commit-and-redeploy step**.
   one-per-piece classification rather than an open multi-valued one. No draft/private state —
   uploading makes something immediately live.
 - **Cache invalidation**: no manual "which pages does this affect" computation, and no reliance on
-  TTL expiry either — every admin write purges Cloudflare's entire edge cache for the zone. See
-  **Cache policy** below for why that's better than either alternative.
+  TTL expiry either — every admin write purges the Worker's own cache in full. See **Cache policy**
+  below for why that's better than either alternative.
 - **No special-cased pages per asset kind** — one generic `/kind/<kind>` template, the same
   generalization already used for `/tag/<slug>`.
 
@@ -43,20 +43,21 @@ Two build steps exist and must not be conflated:
    never a redeploy of app code. On a cache hit, the Worker doesn't run at all; Cloudflare serves the
    cached HTML directly.
 
-Non-interactive pages are plain Astro components — zero JS shipped to the browser by default. The map
-is the one **island** that hydrates and ships its own JS (Leaflet) plus the hand-written
-click-to-detail script.
+Non-interactive pages are plain Astro components — zero JS shipped to the browser by default. Two
+**islands** on the home page hydrate and ship their own JS: the Leaflet map, and the timeline
+scrubber (see their own sections below).
 
 **Request walkthrough** (e.g. a viewer opening `/piece/042`):
 1. Cloudflare's anycast network routes to the nearest edge PoP.
-2. Cache hit (the common case — see **Cache policy** below): served straight from cache, sub-10ms,
-   Worker never runs at all.
-3. Cache miss (right after a purge, or the first-ever visitor from this region): Worker runs at
-   that same nearby PoP, Astro renders the page from the current data in R2, response goes out with
-   `Cache-Control`, and gets cached at that PoP.
-4. First view of any given page/image from a brand-new region pays one real round trip to origin;
-   Cloudflare's Tiered Cache reduces this further. Every subsequent view in that region is
-   edge-cached until the next purge.
+2. Cache hit (the common case — see **Cache policy** below): served straight from Workers Cache,
+   sub-10ms, Worker never runs at all.
+3. Cache miss (right after a purge, or a fresh Worker version's first request anywhere): the Worker
+   runs, Astro renders the page from the current data in R2, response goes out with `Cache-Control`,
+   and gets cached.
+4. Workers Cache is tiered: each data center has its own local cache, but they all consult a shared
+   upper tier on a local miss — so the very first request for a page, from anywhere on Earth, is
+   generally enough to make every later request everywhere a hit, without waiting for that specific
+   data center to see its own first visitor.
 
 ## Metadata storage: one JSON document in R2
 
@@ -65,12 +66,16 @@ A single object, `data/pieces.json`, holding:
 ```json
 {
   "pieces": [ { "...piece record...": true } ],
-  "pinnedLinks": [
-    { "label": "Easel Setup", "href": "/kind/setup" },
-    { "label": "India 2023", "href": "/tag/india-2023" }
-  ]
+  "pinnedLinks": []
 }
 ```
+
+`pinnedLinks` is dead weight at this point — there was never an admin UI to write it, and as of
+the 2026-07-22 home page redesign nothing reads it either (the one thing it was ever meant to hold,
+an "Easel Setup" quick link, is now just hardcoded directly in the header nav, since building a
+whole editable-links feature for two or three fixed destinations was never worth it). Still present
+in the type/stored document only because removing it hasn't been done yet — see docs/TODO.md's
+standing simplicity-audit item.
 
 At ~1,000 pieces with generous fields, this is roughly 1-2MB uncompressed / a few hundred KB gzipped —
 cheap to read, cheap to write, cheap to ship to the browser whole for the map/timeline islands.
@@ -118,9 +123,9 @@ difference, not an arbitrary one.
    entirely; old keys just stop being referenced.
 5. Writes the updated JSON back with a conditional PUT (`onlyIf: {etagMatches: ...}`) — if it fails
    because something wrote in between, reload and retry.
-6. Calls Cloudflare's Cache Purge API with `purge_everything: true` for the zone. No list of
-   "affected pages" to compute — a full purge is indiscriminate by design, which is what makes it
-   bug-free: there's nothing to forget.
+6. Calls `cache.purge({ purgeEverything: true })` (see `src/lib/purge.ts`) to invalidate the
+   Worker's own cache in full. No list of "affected pages" to compute — a full purge is
+   indiscriminate by design, which is what makes it bug-free: there's nothing to forget.
 
 ## Cache policy: purge-on-write, not TTL-driven expiry
 
@@ -130,14 +135,26 @@ Every HTML page and the shared `data/pieces.json` fetch carries the same `Cache-
 Cache-Control: public, max-age=60, s-maxage=2592000
 ```
 
-Two independent caches read this header, for different purposes:
+**This is read by Workers Cache** (`"cache": { "enabled": true }` in `wrangler.jsonc`, requires
+Wrangler ≥4.69.0) — a cache that sits in front of the Worker itself, so a hit is served without the
+Worker running at all. This is a real correction from an earlier design: ordinary zone-level Cache
+Rules were assumed to be the mechanism here, but **Cache Rules only apply to a Worker's own
+`fetch()` calls to an external origin** — they do nothing for a Worker that generates its response
+directly (this app's entire case, since Astro renders straight from R2 with no origin fetch
+involved). This was caught live: a post-deploy smoke test (`scripts/check-caching.mjs`) against
+production showed every page re-rendering on every request — `CF-Cache-Status` absent entirely —
+despite a correctly-configured Cache Rule. Workers Cache is the mechanism that actually works for a
+Worker acting as its own origin, and needs zero dashboard configuration — just the one config flag.
 
-- **`s-maxage` (Cloudflare's edge, 30 days)**: this is what actually governs how often Astro's
-  render code reruns. It's long because *purge*, not expiry, is what keeps the edge fresh — step 6
-  of the write flow invalidates it the instant something changes. A missed/failed purge is
-  self-healing: the next edit purges everything again regardless of what it touched. In steady
-  state, Astro only reruns for two reasons: the request immediately after a purge (guaranteed
-  miss), or the first-ever visitor from a new edge region.
+Two things read the `Cache-Control` header, for different purposes:
+
+- **`s-maxage` (Workers Cache, 30 days)**: this is what actually governs how often Astro's render
+  code reruns. It's long because *purge*, not expiry, is what keeps the cache fresh — step 6 of the
+  write flow invalidates it the instant something changes. A missed/failed purge is self-healing:
+  the next edit purges everything again regardless of what it touched. In steady state, Astro only
+  reruns for two reasons: the request immediately after a purge (guaranteed miss), or a fresh
+  Worker version's first request (the Worker version is part of the cache key, so each deploy
+  starts with an empty cache).
 - **`max-age` (the visitor's own browser, 1 minute)**: a server-side purge has zero effect on a
   browser's already-cached local copy — there's no way to remotely invalidate that. Kept short
   (rather than, say, an hour) mainly so the site owner can debug the live site without constantly
@@ -145,27 +162,39 @@ Two independent caches read this header, for different purposes:
   browser-to-edge traffic and the edge already has the fresh, purged-and-rerendered response cached
   and ready — this value has no bearing on how often Astro's render code actually runs.
 
-Purging requires a Cloudflare API token (scoped to Cache Purge for this zone) and the zone ID,
-stored as Worker secrets — set up once, alongside the R2 bucket and Access application, when the
-site gets deployed to its own (sub)domain. Purge Everything is available on all Cloudflare plans
-including Free, rate-limited to 5 requests/minute (far above what occasional edits need), and
-propagates in well under a second. Images are unaffected by any of this — they stay long-cached/
-immutable, since they're already invalidation-free by virtue of versioned keys.
+Purging calls `cache.purge()` (imported from `'cloudflare:workers'`) **from inside the Worker** —
+this needs no API token or zone ID at all, unlike the zone-level Cache Purge HTTP API. That's
+actually the important part of the correction: per Cloudflare's own docs, "no zone-level purge (via
+the dashboard, API, or Terraform) affects Workers Caching content" — only this in-Worker call does.
+The zone HTTP API this app used to call had no effect on Workers Cache whatsoever, meaning the
+original purge-on-write design was silently a no-op even before the missing-Cache-Rule issue was
+found. Images are unaffected by any of this — they stay long-cached/immutable, since they're
+already invalidation-free by virtue of versioned keys.
 
-**Important, easy to miss**: Cloudflare does **not** cache HTML at the edge by default, regardless
-of the `Cache-Control` header — its default cache eligibility is decided by file extension
-(`.css`/`.js`/`.png`/etc. are cached automatically; extensionless paths like `/piece/042` are not),
-not by header presence. Without an explicit **Cache Rule** for this zone (`Eligible for cache: Yes`,
-`Edge TTL: respect origin headers`), every request would silently hit the Worker and re-render —
-the entire "renders once, then pure cache" premise depends on this one dashboard step. It's a
-**required** part of the Cloudflare setup, not optional polish — see docs/TODO.md.
+**Things that silently bypass Workers Cache** (worth knowing if a page mysteriously stops caching):
+only `GET`/`HEAD` requests are cached; a `Set-Cookie` response header forces `BYPASS`; requests
+carrying `Authorization` only cache if the response is `public`, `must-revalidate`, or has
+`s-maxage`; `Cache-Control: private`/`no-store` (used deliberately on every `/admin/*` route) always
+bypasses.
 
 **Verifying it's actually working**: the precise signal is the `CF-Cache-Status` response header
-Cloudflare adds to every response (`HIT` = served from cache, Worker didn't run; `MISS`/`EXPIRED`
-= it did) — check via `curl -I` or the browser's Network tab. For an always-visible, no-devtools-
-needed sanity check, every page also renders a small debug footer (see Base.astro) showing the
-render timestamp and edge colo — if reloading the same URL keeps showing the same timestamp,
-that request was served from cache, not re-rendered.
+(`HIT` = served from cache, Worker didn't run; `MISS`/`BYPASS`/`EXPIRED`/etc. = it did) — check via
+`curl -I` or the browser's Network tab. For an always-visible, no-devtools-needed sanity check,
+every page also renders a small debug footer (see Base.astro) showing the render timestamp and edge
+colo — if reloading the same URL keeps showing the same timestamp, that request was served from
+cache, not re-rendered.
+
+**A real gap found after this design was already live**: `purgeEverything()` only ever runs from
+inside an authenticated admin write handler — a pure code deploy with no accompanying data edit
+never purges anything. Caught live when a route removed in a deploy kept serving its old,
+now-nonexistent page from a still-warm cache entry, well past when that deploy went out. Since
+deploying happens from a CLI session with no Cloudflare Access login, the existing purge-on-write
+path can't be reused directly — `src/pages/deploy-purge.ts` is a small GET endpoint gated by a
+`DEPLOY_PURGE_TOKEN` Worker secret instead (404s on any mismatch or if the secret isn't set, so its
+existence isn't advertised), called once after every deploy since. **Purge propagation is also not
+instant in practice** — repeatedly confirmed a stale `HIT` for 15-30+ seconds after calling it,
+before a re-check finally showed a fresh `MISS`. Don't trust the first post-purge check; wait ~25-30s
+and re-verify.
 
 ## Backups
 
@@ -229,59 +258,226 @@ account being compromised or suspended, not just an app bug) — a strictly larg
 model than "bugs in this code" than what was asked for. Worth considering later if wanted, not
 built now.
 
-## Images: R2 + on-demand transforms
+## Images: R2, served as-is for now
 
-Originals land in R2 (zero egress fees, ~$0.015/GB/mo). Thumbnail/medium sizes are not separately
-generated/stored files — they're the same R2 object requested through a Cloudflare Image
-Transformation URL (`/cdn-cgi/image/width=...,format=auto/...`), resized and re-encoded (auto
-AVIF/WebP) on first request per size, then cached at the edge. Because original keys are versioned,
-transformed variants can be cached effectively forever.
+Originals land in R2 (zero egress fees, ~$0.015/GB/mo), served directly by `src/pages/img/[...key].ts`
+— a plain passthrough (`imageUrl(r2Key)` → `/img/<r2Key>`) with a long immutable `Cache-Control`,
+safe since keys are versioned and never reused. **Not yet resized/transcoded** — the original plan
+was to request the same R2 object through a Cloudflare Image Transformation URL
+(`/cdn-cgi/image/width=...,format=auto/...`) for on-demand resizing and AVIF/WebP re-encoding, but
+that URL pattern only works on Cloudflare's real edge network, not in local dev, so it's never been
+verified and hasn't been wired in. Every page currently ships the original full-resolution file;
+revisit once file sizes in practice make that worth fixing (see docs/TODO.md).
+
+Client-side sizing (not server-side resizing) is what currently keeps big images from being
+unusably huge on screen: pages that show a full image constrain it with CSS (`max-width`/
+`max-height`, see the Visual design section) rather than requesting a smaller file — the browser
+still downloads the original bytes either way.
 
 ## Auth: Cloudflare Access + Google
 
-A Cloudflare Access application guards `/admin/*` and every mutating API route (`/admin/api/*`).
-Public read routes are outside this application entirely.
+A Cloudflare Access application (team domain `untitledtrading.cloudflareaccess.com`) guards
+`klauria.art/admin*` — the wildcard is what makes it cover every admin subpath (`/admin/new`,
+`/admin/edit/<id>`, `/admin/favorites`, `/admin/backups`), not just the literal `/admin` index.
+Public read routes are outside this application entirely; they never see a login wall.
 
-- **Identity provider**: Google OAuth, configured in Cloudflare's Zero Trust dashboard.
-- **Policy**: allow only the owner's email.
-- **Mechanics**: unauthenticated request to a guarded path → Cloudflare's hosted login page → Google
-  OAuth → Cloudflare checks the returned email against the policy → issues a short-lived signed
-  session cookie → then forwards the request to the Worker. The Worker can optionally read
-  `Cf-Access-Authenticated-User-Email` as a defense-in-depth check, but the gate itself requires zero
-  application auth code — it's edge configuration.
+- **Identity provider**: Google OAuth (an OAuth client created in Google Cloud Console, wired into
+  Cloudflare's Zero Trust → Authentication → Login methods).
+- **Policy**: a single Allow policy, restricted to one specific email via the `Emails` include rule.
+- **Mechanics**: unauthenticated request to a guarded path → `302` to Cloudflare's hosted login page
+  → Google OAuth → Cloudflare checks the returned email against the policy → issues a short-lived
+  signed session cookie (`CF_AppSession`) → then forwards the request to the Worker. This happens
+  entirely at the edge, before the Worker ever runs — confirmed by observation (`curl` against an
+  unauthenticated `/admin` request returns the `302`/`Set-Cookie` directly from
+  `untitledtrading.cloudflareaccess.com`, never reaching Astro). The gate itself requires zero
+  application auth code; it's pure edge configuration.
+- **Defense-in-depth**: the Worker also reads `Cf-Access-Authenticated-User-Email` and compares it
+  against an `ADMIN_EMAIL` Worker secret (`src/lib/adminGuard.ts`) before allowing any mutation —
+  redundant with Access's own policy by design, in case the Access application is ever
+  misconfigured or briefly disabled. This check no-ops (always allows) when `ADMIN_EMAIL` is unset,
+  which is true for local dev, since Access itself doesn't exist there either.
 
-## Map + inline detail (the one JS island)
+## Map + inline detail (one of two JS islands)
 
-Leaflet, custom pins from `data/pieces.json` (id, lat/lng, thumbnail, a couple of tags for pin
-styling). Clustered when zoomed out. Hover → small thumbnail popup. Click → renders full detail in a
-panel on the same page, via a small hand-written JS function reading the already-loaded piece data.
+Leaflet, custom pins from `data/pieces.json` (embedded inline as a `<script type="application/json">`
+tag on the home page — no separate data fetch), styled/wired up in `src/scripts/mapPage.ts`. Opens
+zoomed out on the whole world (`setView([20, 0], 2)`), not auto-fit to wherever the pieces happen to
+be — deliberately reverted from an earlier auto-fit-to-bounds version, since the point of opening the
+map is seeing the globe first, then zooming into a pin yourself. Hover a pin → small thumbnail popup.
+Click a pin → renders full detail in a panel below the map, via a small hand-written JS function
+reading the already-loaded piece data.
 
-The piece-detail rendering logic exists in two places as a result — the map island's vanilla-JS
-renderer, and the Astro component used for the real `/piece/<id>` permalink page. That's the accepted
-cost of skipping htmx: one contained duplication, not a site-wide one. Every piece still gets a real
-static permalink page (sharing, SEO/OG tags, JS-off access), and a plain non-JS "browse by location"
-list page exists as a fallback path.
+**Clustering**: `leaflet.markercluster` groups nearby pins into a numbered badge that splits apart as
+you zoom in, recolored to the site's palette. This took three attempts, worth recording since the
+first two seemed reasonable going in but solved the wrong problem:
+1. Group by lat/lng rounded to ~11m. Failed in practice — two pieces considered "the same place"
+   are often clicked at noticeably different spots on a zoomed-out map, easily outside 11m of each
+   other, so grouping almost never fired.
+2. Group by the piece's `placeName` string instead. Explicitly rejected — this only merges pieces
+   with an identical place name, but what was actually wanted is **dynamic, zoom-dependent
+   merging**: two pieces on opposite sides of a city should merge into one badge at world zoom (a
+   few screen pixels apart) but split into individual pins once zoomed into that city (hundreds of
+   pixels apart). No key computed once from the data, however chosen, can do that — it has to be
+   recomputed live from the map's actual current pixel geometry every time the zoom changes.
+3. `leaflet.markercluster` (a mature, decade-old, widely-used Leaflet plugin — the same "well-
+   established, not a fad" bar Leaflet itself was picked under) does real pixel-distance
+   clustering that recomputes on zoom/pan, and "spiderfies" (fans out into individually-clickable
+   satellite markers) a cluster that still has multiple pieces once zoomed in as far as possible —
+   which is what handles pieces at the literal same point, with no custom prev/next paging UI
+   needed for that case. `mapPage.ts` went back to one marker per piece; the library owns all
+   grouping/positioning.
+
+**Known bundler quirk**: `import 'leaflet.markercluster/dist/MarkerCluster.css'` (the identical
+pattern already working for `leaflet/dist/leaflet.css`) silently produces no CSS output — confirmed
+this isn't a bad path by pointing the import at a deliberately nonexistent filename, which correctly
+errored the build, proving the real path does resolve; the file's content just never reaches any
+emitted chunk, even after a full cache-clear and rebuild. Worked around by inlining the plugin's
+small, stable base CSS directly into `Base.astro`'s global stylesheet instead of importing it from
+the package — acceptable since that CSS essentially never changes.
+
+The piece-detail rendering logic exists in two places as a result of the inline panel — the map
+island's vanilla-JS renderer, and the Astro component used for the real `/piece/<id>` permalink page.
+That's the accepted cost of skipping htmx: one contained duplication, not a site-wide one. Every
+piece still gets a real static permalink page (sharing, SEO/OG tags, JS-off access).
+
+## Timeline (the other JS island)
+
+A native `<input type="range">` scrubber, one step per month rather than per piece — dragging a
+native slider is "the scrubbing," and per-month granularity means it's coarse/deliberate rather than
+needing fine motor precision to land on one specific piece among hundreds. Oldest month on the left,
+most recent on the right (opens on the most recent), matching how a timeline reads. Below it, a small
+gallery frame shows the selected month's primary image, with `‹ Previous here` / `Next here ›`
+buttons that appear only when a month has more than one piece, to page through them without touching
+the slider — dragging picks "when," the arrows pick "which one." `src/scripts/timelineScrubber.ts`,
+same `setupX()`-export-plus-embedded-JSON pattern as the map island.
+
+**The track itself is the "what have I been up to" visual**: its background is a server-computed
+`linear-gradient`, one hard-edged color band per month, blended between a gray-brown (dry media) and
+blue (wet media) based on that month's actual mix — reusing `classifyMedium()`, the same dry/wet
+split already used elsewhere, not a new finer-grained medium taxonomy. This replaced an earlier
+static stacked-bar-per-month chart entirely, rather than keeping both, since the slider's track
+conveys the same density information while also being the actual control.
+
+## Tags
+
+A tag cloud on the home page (below Timeline) — every distinct tag across all pieces, via the
+existing `getTagFrequency()` (already built for the admin form's tag-suggestion chips), rendered as
+`tag-chip` links sized on a simple linear scale between the least- and most-used tag, linking to
+`/tag/<slug>`. No separate index page; this is the one place all tags are browsable from.
+
+## Visual design: image-forward, minimal chrome
+
+Redone 2026-07-22 after the initial build read as a generic site rather than a personal art archive
+("SO SO SO MUCH SPACE... the priority is THE IMAGES"). Calibrated directly against a real painter's
+site (juddmercer.art — its actual HTML/CSS was fetched and checked, not guessed from memory) for
+scale and structure. Key decisions, several only found to be wrong after seeing them live and
+correcting once:
+
+- **No dark mode.** Removed the `@media (prefers-color-scheme: dark)` block entirely — never asked
+  for, always the light/cream palette now.
+- **A compact header, not a full nav bar.** A small site-title link plus a hamburger toggle — a
+  plain checkbox/label pair (no JS at all) that reveals Home/My-easel-setup as a dropdown, instead
+  of a bordered nav strip and a heavy underlined `<h1>` sitting above the fold on every page. The
+  shared `h1` style is also much smaller/quieter site-wide as a result (other pages' own `<h1>`,
+  e.g. a piece's title, still needs to read clearly, just without the old thick border-bottom).
+  "Browse" and "Admin" were later removed from the dropdown too — Admin now sits inline with the
+  render-id debug footer at the very bottom, styled to blend into that muted line, since "only I
+  will ever click it."
+- **`PieceList.astro`'s `large` variant** (used for every big-image section) went through several
+  live-corrected iterations before landing:
+  - No border around images anywhere (`img { border: ... }` removed globally) — direct feedback
+    against juddmercer.art having none.
+  - Full viewport width, breaking out of the page's own centered/padded container via the standard
+    `left:50%; margin-left:-50vw` trick, but with a shared `--gutter` inset (currently `4vw`) on
+    each side rather than running truly edge-to-edge.
+  - **Real bug, not a preference**: that gutter was first `1rem` on the images but the page body
+    still used a separate, fixed `1.5rem` padding for its text — two different values that only
+    coincidentally matched at one specific viewport width. Fixed by hoisting a single `--gutter`
+    CSS variable and having both `body`'s padding and the gallery's inset reference it.
+  - **A second, larger version of the same bug**: `body`'s `max-width` was `64rem` (1024px) and
+    centered — on any screen wider than that (i.e. most desktops), the auto-centered body sat
+    inset from the real viewport edge by `(screen width − 1024px) / 2` *on top of* the gutter,
+    while the full-bleed gallery images correctly stayed inset by only the gutter — a growing
+    misalignment between text and image edges as screen width increased. Fixed by raising `body`'s
+    `max-width` to `1920px`, matching juddmercer.art's own `maxPageWidth` (confirmed from its
+    fetched CSS) — wide enough that the mismatch never triggers on a real screen.
+  - Auto-fit grid at `minmax(min(480px, 100%), 1fr)` — one huge piece per row on mobile, naturally
+    2-3 per row on a wide desktop window. The `min(480px, 100%)` matters specifically for mobile:
+    a bare `480px` minimum is wider than most phone screens, which forced the grid (and the image
+    in it) past the edge of the viewport, needing a horizontal scroll to see the rest of the image
+    — a real, reported bug, not a style choice.
+  - Natural (non-cropped) aspect ratio per image, not a forced square — the point is showing the
+    whole piece.
+  - A `heroFirst` prop forces only the very first piece of the page's *actual* opening gallery to
+    span the full row as a big one-time opening beat (`grid-column: 1 / -1`) — originally this
+    fired on every `.piece-grid.large` on the page unconditionally, which made every later batch's
+    first image look randomly oversized rather than reading as deliberate.
+- **Tall/portrait images rendering too big to see on screen**: `max-width:100%; height:auto` had no
+  height cap at all, so a tall scan could render many multiples of the viewport's height at full
+  container width. Fixed with `max-height:85vh` alongside (`width:auto; height:auto` on both axes),
+  on `/piece/[id]` and the map's inline detail panel.
+- **The home page itself** is one continuous scroll rather than separate sections stacked
+  top-to-bottom: favorites/recent → Map → more recent → Timeline → a random pick → Tags → another
+  random pick → the lifetime/year stat at the very bottom (moved there from a boxed callout near
+  the top, since it's "a stat I wanna look at," not something a visitor needs first). Real art
+  keeps appearing between the three "explore by X" tools rather than being front-loaded once,
+  matching explicit feedback: "a user comes in and it's like they're surrounded by my images, and
+  then there's ways for them to enter in and see more."
+
+## Admin form conveniences
+
+Small quality-of-life additions to the new/edit piece forms (`src/scripts/pieceForm.ts`), each
+following the same rule: never clobber a value the owner already set on purpose.
+
+- **Filename-derived title** (existing) and **filename-derived date** (added 2026-07-22): selecting
+  the final image tries to parse a date out of its filename (`YYYY-MM-DD`/`YYYY_MM_DD`, or a bare
+  `YYYYMMDD` run — the common phone-camera pattern, e.g. `IMG_20231114_153022.jpg`) and pre-fills
+  the date field. Title suggestion only fills an empty field; date can't use that same check since
+  the field is never genuinely empty (today's date, or the piece's real existing date) — instead
+  the value at page load is tracked, and only overwritten while the field still holds exactly that.
+- **Location search**: a text input + Search button next to the location map, forward-geocoding via
+  the same Nominatim service already used for reverse geocoding (no new dependency). Takes the
+  single best match rather than offering a list of candidates — not worth the extra UI for
+  searching an obvious named place on a tool only one person uses. Reuses the existing
+  `setLocation()` helper once a result comes back, so it's indistinguishable from a manual map
+  click.
 
 ## Page inventory
 
-- `/` — home: favorites first, then recent pieces, pinned quick-links, phase indicator.
+- `/` — home: one long visual-forward scroll, not a set of separate tabs — big full-bleed images
+  interspersed with the ways to explore the rest of the collection: the interactive Leaflet map
+  (by location), the timeline scrubber (by time), and a tag cloud (by tag), each followed by more
+  big images rather than all three tools stacked back to back. Revised 2026-07-22 per explicit
+  owner feedback ("I want to give someone my website and they open it and BANG — fullscreen
+  images... surrounded by my images"): `/map`, `/timeline`, and non-JS `/browse` used to be
+  separate nav-linked pages; all three are gone as standalone routes — map and timeline folded
+  directly into `/` (same underlying map/timeline islands described above, just rendered on the
+  home page), and browse removed outright as "pointless, I'll never use it."
 - `/piece/<id>` — full detail, static-feeling page (SSR + cached).
 - `/tag/<slug>` — one template, covers medium tags, trip tags, and any other descriptive tag.
-- `/kind/<kind>` — one template, covers every asset kind (`/kind/setup`, `/kind/value-study`, ...).
-- `/map` — the interactive Leaflet island.
-- `/timeline` — chronological browse, all pieces.
-- non-JS `/browse` — plain list grouped by place name, fallback for JS-off/crawlers.
+- `/kind/<kind>` — one template, covers every asset kind (`/kind/setup`, `/kind/value-study`, ...);
+  same big image-forward `piece-grid large` treatment as the home page, not a small thumbnail list.
 - `/admin` — upload form, edit-piece form, favorites reorder — plain HTML forms with
   full-page-reload submits. Favorites reordering starts as an editable numeric rank field per row.
+- `/deploy-purge` — not a real page, a token-gated GET endpoint (see the Cache policy section) for
+  purging the cache after a deploy from a CLI session that can't go through Cloudflare Access.
 
 **"Phases"**: not a stored field. Derived automatically by classifying each piece's medium tags into
 rough groups ("dry" — pencil, ink — vs "wet" — watercolor, gouache, oil, acrylic) and charting density
-over `date`.
+over `date` — see the Timeline section above for how this is actually surfaced (an interactive
+scrubber colored by this classification, not a static chart).
 
 ## Open items (deliberately deferred)
 
-- Visual design: palette (pastels, purple/pink/red), typography, overall aesthetic.
-- Exact validation rules for admin forms.
+- Exact validation rules for admin forms beyond what already exists (required fields, file-type
+  checks).
 - Whether to add explicit JWT-signature verification of the Access token server-side.
 - Whether a future search box over notes/titles is wanted (likely just client-side substring search
   over the existing JSON document at this scale).
+- Whether to keep `/deploy-purge` as standing infrastructure, given it exists to work around a real
+  gap (deploys don't purge the cache on their own — see Cache policy) rather than being originally
+  designed in.
+- Cloudflare Image Transformations for on-demand resizing (see Images section) — still just a plain
+  passthrough of the original file today.
+- Removing the now-fully-dead `pinnedLinks` field/type, and the general codebase complexity audit
+  the owner asked for — tracked in docs/TODO.md's standing simplicity-audit section, not done yet.

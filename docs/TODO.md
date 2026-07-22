@@ -2,6 +2,39 @@
 
 See `docs/architecture.md` for the full design. This is the ordered task breakdown.
 
+## Standing priority: simplicity over cleverness (owner directive, 2026-07-22)
+**The owner is a grug-brain developer who hates pointless complexity and code bloat.** This is a
+standing preference, not a one-off complaint — every future change in this codebase should be
+weighed against it, not just the items below.
+- [ ] Remove the `ADMIN_EMAIL`/`isAuthorizedAdminRequest()` defense-in-depth check
+      (`src/lib/adminGuard.ts`, called from `admin/new.astro`, `admin/edit/[id].astro`,
+      `admin/favorites.astro`). Flagged by the owner as pointless complexity: Cloudflare Access is
+      the real gate and already fully verified working (a `302` to login for any unauthenticated
+      request, before the Worker even runs) — this second in-app check is redundant belt-and-braces
+      the owner doesn't want. Removing it also deletes `src/env.d.ts` (the declaration-merge file
+      that only exists to type `ADMIN_EMAIL` as a secret) and the `ADMIN_EMAIL` Worker secret
+      itself, and simplifies all three call sites.
+- [ ] Full pass over the codebase and `docs/architecture.md`/this file for other pointless
+      complexity introduced without being asked for — abstractions, tests, defensive checks, or
+      "nice to have" infrastructure the owner never actually requested. Go looking for it
+      specifically rather than assuming there isn't more; the `ADMIN_EMAIL` check above was missed
+      until the owner caught it themselves. Candidates worth scrutinizing on this pass: whether all
+      57 Vitest tests are pulling their weight for a site this size, whether the backup system's
+      daily-reconciliation-as-a-separate-Worker split is more machinery than needed, and whether any
+      "generalized for future flexibility" code (e.g. `assets[].kind` as an open enum,
+      `/kind/<kind>` template) is solving a problem that doesn't exist yet.
+- [ ] `pinnedLinks` (`PiecesData.pinnedLinks`, `types.ts`) is now fully dead: there was never an
+      admin UI to write it, and as of the 2026-07-22 home page redesign nothing reads it either
+      (replaced with 3 hardcoded links — Timeline/Map/`/kind/setup` — directly in `index.astro`,
+      since that's all it was ever going to hold). Remove the field/type entirely rather than
+      leaving it as unused shape.
+- [ ] Fix the process, not just the code: every subsequent edit in this codebase must be
+      self-reviewed against this preference before considering it done — would the owner call this
+      simple, or would they call it bloat? Lean toward the boring, obvious, least-code solution over
+      a clever or "more correct" one; don't add abstractions, tests, or defensive code beyond what
+      the task actually needs; three similar lines beat a premature helper. When genuinely unsure
+      whether something crosses the line, ask rather than guessing.
+
 ## Phase 0 — Scaffolding
 - [x] `npm create astro@latest` (TypeScript, minimal template)
 - [x] Add `@astrojs/cloudflare` adapter, set `output: "server"` in `astro.config.mjs`
@@ -14,10 +47,11 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
 - [x] Add `.gitignore` for `node_modules`, `.astro`, `dist`, `.wrangler`
 - [x] Domain decided: **klauria.art**. Zone added to Cloudflare and active (nameservers switched
       from Namecheap, confirmed via API — `alina.ns.cloudflare.com` / `jarred.ns.cloudflare.com`).
-      **Confirmed by observation, not just theory**: the `workers.dev` URL has no `CF-Cache-Status`
-      header at all — Cache Rules genuinely don't apply there (not a zone in this account), so the
-      entire purge-on-write/edge-cache design cannot take effect until this site is on the real
-      domain. `workers.dev` is fine for functional testing meanwhile, just not for verifying caching.
+      (Correction, 2026-07-22: the missing `CF-Cache-Status` on `workers.dev` originally observed
+      here was blamed on "not a real zone" — wrong diagnosis. The actual cause was that the whole
+      design relied on zone-level Cache Rules, which never apply to a Worker generating its own
+      response in the first place, on *any* hostname. See the Cache fix entry near the end of this
+      file. `workers.dev` now caches correctly via Workers Cache, same as a custom domain would.)
 - [ ] **Blocked on a dashboard action only the domain owner can do** — attaching the Custom Domain
       failed with a 409 Conflict: `klauria.art` (and `www.klauria.art`) already have Cloudflare-
       proxied A/AAAA records (imported from Namecheap's default parking setup when the zone was
@@ -97,9 +131,13 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
 - [x] `/tag/[slug]` — all pieces containing that tag in `tags[]`
 - [x] `/kind/[kind]` — all assets across all pieces matching that `assets[].kind`; 404s on an
       unrecognized kind
-- [x] `/timeline` — chronological list + a derived phase density bar (dry vs. wet media per month,
-      from `classifyMedium()` in `src/lib/facets.ts` — no manual phase tagging)
-- [x] non-JS `/browse` — plain list grouped by `location.placeName`
+- [x] Timeline — a derived phase density bar (dry vs. wet media per month, from `classifyMedium()`
+      in `src/lib/facets.ts` — no manual phase tagging). Originally its own `/timeline` page;
+      folded directly into `/` on 2026-07-22 (see the home page redesign entry near the end of
+      this file) — no longer a separate route.
+- [x] non-JS `/browse` — plain list grouped by `location.placeName`. Removed outright on
+      2026-07-22 per explicit feedback ("pointless, I'll never use it") — see the home page
+      redesign entry near the end of this file.
 - [x] Uniform `Cache-Control: public, max-age=60, s-maxage=2592000` applied to every page built so
       far — still need to apply it to the `data/pieces.json` fetch route once the map island needs
       it (Phase 4)
@@ -138,7 +176,10 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
       replacement (correct on replace, not just add).
 
 ## Phase 4 — Map island
-- [x] `/map` page (`src/pages/map.astro`) + `src/scripts/mapPage.ts`, Leaflet + free OSM tiles.
+- [x] Originally its own `/map` page (`src/pages/map.astro`); folded directly into `/` on
+      2026-07-22 (see the home page redesign entry near the end of this file) — `mapPage.ts` and
+      its `setupMap()` export are unchanged, just imported from `index.astro` instead.
+- [x] `src/scripts/mapPage.ts`, Leaflet + free OSM tiles.
       Implementation choice: rather than a separate fetchable `data/pieces.json` endpoint (as
       originally sketched in docs/architecture.md), the full piece list is embedded directly in
       the page as a `<script type="application/json">` tag (JSON with `<` escaped to `<` so a
@@ -161,13 +202,18 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
       single pin
 
 ## Phase 5 — Admin
-- [ ] Cloudflare Zero Trust: create Access application covering `/admin/*` and `/admin/api/*` — not
-      done yet, requires the owner's Cloudflare login. Until then, `/admin` is open in every
-      environment, including local dev (Access isn't emulated locally at all — it's an edge-only
-      product, not a binding — so this is expected, not a bug)
-- [ ] Configure Google as the identity provider (OAuth client in Google Cloud Console, wired into
-      Cloudflare Zero Trust dashboard)
-- [ ] Access policy: allow only the owner's email
+- [x] Cloudflare Zero Trust: Access application created (2026-07-22), self-hosted, hostname
+      `klauria.art`, path `/admin*` (the wildcard is what makes it cover every admin subpath, not
+      just the literal `/admin` index). Verified: an unauthenticated request to `/admin` returns a
+      `302` straight into `untitledtrading.cloudflareaccess.com`'s login flow — the Worker never
+      runs at all for a non-matching request, confirmed via `curl -D -` showing the redirect and
+      `Set-Cookie: CF_AppSession`.
+- [x] Configured Google as the identity provider: OAuth client created in Google Cloud Console
+      (Web application type, authorized origin/redirect URI both under
+      `untitledtrading.cloudflareaccess.com`), wired into Zero Trust → Authentication → Login
+      methods, tested successfully via the dashboard's own "Test" button.
+- [x] Access policy: single Allow policy, Include rule `Emails` = `kslauria@gmail.com` — the only
+      account that can reach `/admin*` at all.
 - [x] `/admin` index (`src/pages/admin/index.astro`) — lists existing pieces, links to `/admin/new`
 - [x] `/admin/new` upload form (`src/pages/admin/new.astro`) — title/date/stage/location/tags/notes
       + up to 5 image fields (one per asset kind, `final` required). Validates required fields
@@ -207,24 +253,23 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
       and excludes the blank one.
 - [x] Defense-in-depth `Cf-Access-Authenticated-User-Email` check — `src/lib/adminGuard.ts`'s
       `isAuthorizedAdminRequest()`, called at the top of every mutation handler (new/edit/delete/
-      favorites). **No-ops (always allows) until `ADMIN_EMAIL` is a real value** — it's declared as
-      an empty-string placeholder in `wrangler.jsonc`'s `vars` right now so types generate cleanly;
-      a real Worker secret overrides it at deploy time. Verified this doesn't block local writes
-      (which it shouldn't, since Access itself is the real gate and doesn't exist locally).
+      favorites). `ADMIN_EMAIL` is now a real Worker secret (`kslauria@gmail.com`, set via
+      `wrangler secret put ADMIN_EMAIL`, 2026-07-22) rather than the earlier empty-string `vars`
+      placeholder — a secret can't share a binding name with a `vars` entry, so the placeholder was
+      removed from `wrangler.jsonc` first. Since `wrangler types` only knows about `vars`/bindings
+      declared in config, not secrets, `ADMIN_EMAIL` is no longer in the generated
+      `worker-configuration.d.ts` at all — added back via a declaration merge in `src/env.d.ts`
+      (augments both the top-level `Env` and `Cloudflare.Env`, since `cloudflare:workers`' `env`
+      export is typed as the latter) so `astro check` still sees it as `string | undefined`.
+      Verified: local dev writes still work unauthenticated (as before — Access doesn't exist
+      locally so this check no-ops there, same as ever), and production `/admin` still gets the
+      Access `302` (this check is defense-in-depth *behind* Access, not instead of it).
 - [x] Purge-on-write — `src/lib/purge.ts`'s `purgeEverything()`, called after every successful
-      mutation. Same pattern: **no-ops until `CF_API_TOKEN`/`CF_ZONE_ID` are real values**
-      (currently empty-string placeholders in `wrangler.jsonc`). Best-effort/fire-and-forget —
-      failures are swallowed, not surfaced, since a missed purge self-heals on the next write's
-      purge regardless of what that write touched.
-- [ ] Still to do during the Cloudflare setup pass: create the Cache-Purge-scoped API token and
-      note the zone ID, decide the real `ADMIN_EMAIL`, and set all three as Worker secrets
-      (`wrangler secret put`) — no code changes needed, both features activate automatically
-- [ ] **Required, easy to miss**: create a Cache Rule for the zone (`Eligible for cache: Yes`,
-      `Edge TTL: respect origin headers`) covering the whole hostname. Cloudflare does not cache
-      HTML at the edge by default regardless of `Cache-Control` — eligibility is decided by file
-      extension, not header presence. Without this one rule, every request silently hits the
-      Worker and re-renders — the entire "renders once, then pure cache" premise depends on it.
-      See docs/architecture.md's Cache policy section.
+      mutation. Calls `cache.purge({ purgeEverything: true })` from inside the Worker (see the
+      Cache fix entry below) — needs no external credentials at all, unlike the zone-level Cache
+      Purge HTTP API this originally used. Best-effort/fire-and-forget — failures are swallowed,
+      not surfaced, since a missed purge self-heals on the next write's purge regardless of what
+      that write touched.
 
 ## Full code review pass (2026-07-21)
 Went through every file for simplicity and correctness per an explicit request to "check
@@ -305,23 +350,25 @@ passing. Writing these actually caught two real, live bugs (not hypothetical):
       automated caching check below possible/reliable — a timestamp alone could in principle
       collide at millisecond precision between two genuinely separate renders; a UUID practically
       can't. The precise/authoritative signal for a human is still the `CF-Cache-Status` response
-      header (`HIT` vs `MISS`/`EXPIRED`) via `curl -I` or browser devtools — the footer is a
-      no-devtools-needed sanity check, not a replacement for that. Verified locally: valid UUID,
-      changes on every reload as expected (local dev never edge-caches — this only means something
-      once deployed with the Cache Rule above in place).
+      header (`HIT` vs `MISS`/`BYPASS`/`EXPIRED`) via `curl -I` or browser devtools — the footer is
+      a no-devtools-needed sanity check, not a replacement for that. Verified locally: valid UUID,
+      changes on every reload as expected (local dev has no Workers Cache — this only means
+      something once actually deployed).
 - [x] Automated caching-behavior check — `scripts/check-caching.mjs` (plain Node `fetch`, no test
       framework, no dependency). **This is a post-deploy smoke test, not a CI/unit test** — it
-      depends on real Cloudflare edge behavior (the Cache Rule, `CF-Cache-Status`) that simply
+      depends on real Cloudflare edge behavior (Workers Cache, `CF-Cache-Status`) that simply
       doesn't exist under local dev, so it can only mean something against the live deployed site.
-      Usage: `node scripts/check-caching.mjs https://klauria.art`. For each of `/`, `/timeline`,
-      `/browse`, `/map`: fetches it twice back to back and asserts, on the second response,
-      `CF-Cache-Status: HIT`, an identical `data-render-id`, and a byte-identical body. Verified
-      the script itself works correctly by running it against the current `workers.dev` deploy —
-      it correctly reports FAIL on every path (no `CF-Cache-Status` header at all, render id
-      changes every time), matching the already-confirmed fact that Cache Rules don't apply there.
-      Expect all-PASS once the domain move + Cache Rule are done — that's what running it next is
-      for. Only worth covering one page per *kind* (not every `/piece/[id]`) since cacheability
-      could in principle differ per route type, not per instance of the same route.
+      Usage: `node scripts/check-caching.mjs <url>`. Path list has changed twice as pages were
+      folded into `/` or removed outright — currently `/` and `/kind/setup` (see the home page
+      redesign entry near the end of this file). For each path: fetches it twice back to back and
+      asserts, on the second response,
+      `CF-Cache-Status: HIT`, an identical `data-render-id`, and a byte-identical body. This script
+      is what caught the real caching bug — see the Cache fix entry below. Confirmed all-PASS
+      against `https://31-art-website.klauria.workers.dev` after that fix (2026-07-22); expect the
+      same once the custom domain is attached (cache behavior is per-Worker, not per-hostname, so
+      no re-verification should be needed there, but worth one more run to be sure). Only worth
+      covering one page per *kind* (not every `/piece/[id]`) since cacheability could in principle
+      differ per route type, not per instance of the same route.
 - [ ] Confirm phase/density chart reads well on the timeline
 - [ ] Test the full admin flow on a phone (upload + retag + reorder favorites)
   - [ ] **Specifically check HEIC**: iPhones often save/share photos as HEIC by default. Our
@@ -343,7 +390,6 @@ passing. Writing these actually caught two real, live bugs (not hypothetical):
       type, instead of silently uploading something an `<img>` tag can't render. Verified locally
       with a `.txt` file: rejected with a clear error, nothing written to R2.
 - [ ] Deploy to production custom domain, confirm cold-region load behavior is acceptable
-- [ ] Sanity-check Tiered Cache is enabled
 
 ## Backups (2026-07-22)
 Full design/rationale in docs/architecture.md's Backups section. Summary of what's built and
@@ -395,8 +441,228 @@ verified, all against real production data (created and cleaned up throwaway tes
       negligible at this document's size — revisit only if this stops being true after years of
       real use.
 
+## Cache fix: Workers Cache, not Cache Rules (2026-07-22)
+The entire caching design up to this point was built on a wrong assumption, caught live: after
+configuring a Cache Rule per a dashboard walkthrough, `node scripts/check-caching.mjs
+https://klauria.art` still FAILed on every path — `CF-Cache-Status` absent entirely, render ids
+changing on every request.
+- [x] Root cause, confirmed via direct research: zone-level Cache Rules only apply to a Worker's
+      own `fetch()` calls to an external origin — they never apply to a Worker that generates its
+      response directly, which is this app's entire case (Astro renders straight from R2, no
+      origin fetch involved). No Cache Rule configuration could ever have made this work.
+- [x] Also confirmed: the original purge-on-write mechanism (zone-level Cache Purge HTTP API via
+      `CF_API_TOKEN`/`CF_ZONE_ID`) would not have purged the correct cache either way — per
+      Cloudflare's own docs, "no zone-level purge (via the dashboard, API, or Terraform) affects
+      Workers Caching content."
+- [x] Correct mechanism: **Workers Cache** (`"cache": { "enabled": true }` in `wrangler.jsonc`,
+      requires Wrangler ≥4.69.0 — this project has 4.113.0) — a cache in front of the Worker
+      itself, so a hit never runs the Worker at all. Automatically respects the `Cache-Control`
+      headers already set on every page, with zero code changes. Purging uses `cache.purge()`
+      (imported from `'cloudflare:workers'`), called from inside the Worker — needs no API token.
+- [x] Net simplification, not just a fix: the previously-required "create a Cache-Purge-scoped API
+      token" manual step is gone entirely — `CF_API_TOKEN`/`CF_ZONE_ID` removed from
+      `wrangler.jsonc`'s `vars`.
+- [x] Fixed: `src/lib/purge.ts` rewritten around `cache.purge({ purgeEverything: true })`, its
+      3 call sites (`admin/new.astro`, `admin/edit/[id].astro` ×2, `admin/favorites.astro`) updated
+      to the new no-argument signature, `wrangler.jsonc` updated (`cache.enabled: true` added,
+      `CF_API_TOKEN`/`CF_ZONE_ID` removed), types regenerated, `astro check` clean, all 57 Vitest
+      tests still passing, deployed, and reverified: `check-caching.mjs` now reports all-PASS
+      against `https://31-art-website.klauria.workers.dev`, and `/admin` correctly shows
+      `CF-Cache-Status: BYPASS` (its `no-store` header is respected as expected).
+- [x] docs/architecture.md's Cache policy section and this file corrected to describe Workers
+      Cache instead of the old Cache-Rules-based design.
+
+## Home page redesign: image-forward, one continuous scroll (2026-07-22)
+Prompted by explicit visual feedback after the first working deploy: dark mode was never asked
+for, the top nav broke onto an ugly second line on mobile, thumbnails were tiny text-led list rows
+("the name is bigger than the image. no."), and the site overall didn't feel like it was actually
+about visual art. Also compared directly against a real painter's Squarespace site (Judd Mercer)
+to calibrate scale: "BANG, fullscreen images," not a modest thumbnail grid.
+- [x] Removed the `@media (prefers-color-scheme: dark)` block from `Base.astro` entirely — the
+      site is always the light/cream palette now, never auto-switches.
+- [x] Removed the global `img { border: 2px solid var(--border) }` rule — no border around
+      artwork anywhere, matching the reference site.
+- [x] Nav mobile fix: changed `flex-wrap: wrap` to `overflow-x: auto` with `white-space: nowrap`
+      on the links — a single horizontally-scrollable row at every width instead of wrapping.
+- [x] `PieceList.astro` rebuilt from a plain `<a><PieceThumb/>title</a>` list into an image-led
+      card grid (`src/components/PieceList.astro`), used by `/`, `/tag/[slug]`, and the home
+      page's various sections (and `/browse`, since removed — see the follow-up entry below).
+      Normal size: a responsive `auto-fill` grid, modest square-cropped cards — fine for "browse
+      many things" list contexts.
+- [x] Added a `large` variant, iterated twice after seeing it live: first attempt was a modest
+      `minmax(220px)` grid — too small. Second pass: full viewport width (breaks out of the
+      page's centered container via the standard `left:50%; margin-left:-50vw` trick), natural
+      (non-cropped) aspect ratio per image, single column. Still not enough per explicit
+      follow-up ("HUGE we want it HUGE"). Final shape, after being shown Judd Mercer's site
+      directly: `repeat(auto-fit, minmax(480px, 1fr))` with the *first* piece forced to
+      `grid-column: 1 / -1` — one massive opening image, then naturally 2-3 per row on a wide
+      desktop window, back down to 1 per row on mobile. No JS, no breakpoints hand-written —
+      the auto-fit/minmax combination does this on its own.
+- [x] **`/map` and `/timeline` are no longer separate pages.** Both folded directly into `/`:
+      the home page is now one continuous scroll — big images (favorites, then recent) → the
+      interactive Leaflet map → the phase/density timeline chart → more big images (rediscover) →
+      the lifetime/year stat at the very bottom. `src/pages/map.astro` and
+      `src/pages/timeline.astro` deleted outright (not just unlinked) — keeping two ways to reach
+      the identical content would just be duplicate code to keep in sync, and nothing asked to
+      keep them independently reachable. `mapPage.ts`'s `setupMap()` and the phase/density
+      grouping logic from the old `timeline.astro` are unchanged, just relocated into
+      `index.astro`. Nav no longer links to either. Updated the stale links this broke:
+      `404.astro`'s suggestions, `browse.astro`'s "see the map" hint (before `/browse` was itself
+      removed — see the follow-up entry below), and `scripts/check-caching.mjs`'s path list.
+- [x] Replaced the never-populated `pinnedLinks` admin-editable quick-links concept with one
+      hardcoded link on the home page ("My easel setup" → `/kind/setup`) — see the standing
+      simplicity-audit item near the top of this file for the follow-up to remove the now-dead
+      `pinnedLinks` field/type entirely.
+- [x] The "Favorites" section lost its heading entirely per explicit feedback ("favorites doesn't
+      need to say favorites") — it's just the first big-image section on the page, unlabeled,
+      falling back to recent pieces when there are no favorites set yet.
+- [x] Moved the lifetime/year painting-count stat from a boxed callout near the top to a small
+      muted line at the very bottom of the page — explicitly "a stat I wanna look at," not
+      something a visitor needs first.
+- [x] Verified after every step against local dev (real HTML/CSS inspection of the rendered page,
+      not guessed) before each deploy, plus the full `astro check` / Vitest / build /
+      `check-caching.mjs` cycle each time.
+
+## Home page redesign, round 2: mobile bugs and more exploration tools (2026-07-22)
+More explicit feedback after actually using the redesigned site on a phone.
+- [x] **Real bug, not just a preference**: the `large` gallery's `minmax(480px, 1fr)` set a
+      *minimum* column width wider than most phone screens, forcing the whole grid — and the
+      image inside it — past the edge of the viewport. That's what showed up live as "the image
+      is cut off, you have to scroll horizontally to see it all." Fixed with
+      `minmax(min(480px, 100%), 1fr)`, which caps the minimum at whatever width the screen
+      actually has.
+- [x] **Real bug**: map pins showed as a broken-image box with cut-off text instead of an actual
+      pin. Leaflet's default marker icon resolves its image relative to its own CSS file, which
+      breaks once bundled by Vite — the standard fix (explicitly importing the marker PNGs and
+      calling `L.Icon.Default.mergeOptions()` with the bundler-resolved URLs) is now in
+      `mapPage.ts`.
+- [x] Map no longer auto-zooms/fits bounds to wherever the pieces happen to be — removed the
+      `map.fitBounds()` call entirely. It now always opens on the same wide world view
+      (`setView([20, 0], 2)`) and the viewer zooms in themselves.
+- [x] Header rebuilt again: a full nav bar + a heavy underlined `<h1>` + a quick-links button were
+      all sitting above the first image ("SO SO SO MUCH SPACE... the priority is THE IMAGES").
+      Replaced with a compact site-title + a hamburger toggle (a plain checkbox/label pair, no
+      JS) that reveals the nav links as a small dropdown — same pattern as Judd Mercer's mobile
+      header, which was pointed to directly as the reference. The global `h1` style also shrunk
+      site-wide (no border, much smaller) since other pages (piece/tag/kind) still use a real
+      `<h1>` for their own distinguishing title.
+  - [x] "Browse" and "Admin" removed from the hamburger dropdown too. `/browse` deleted outright
+        ("pointless, I'll never use it" — same reasoning as the `/map`/`/timeline` removal: don't
+        leave dead routes lying around). "Admin" moved down next to the render-id debug footer,
+        styled to blend into that same muted line, since "only I will ever click it."
+- [x] `/kind/[kind]` (e.g. "My easel setup") was still the old tiny-thumbnail list — rebuilt to
+      use the same `piece-grid large` treatment as the home page. Since this page's data is
+      `{piece, asset}` pairs (a specific matching asset per piece, not necessarily the piece's
+      overall primary/final asset), the shared grid CSS was pulled out of `PieceList.astro`'s
+      scoped `<style>` into `Base.astro`'s global stylesheet, keyed by class name — one shared
+      look, usable by markup that doesn't share `PieceList`'s `Piece[]`-shaped props.
+- [x] "N paintings in your lifetime" → "in my lifetime" — this is the artist's own site, written
+      in their voice, not addressed to the visitor.
+- [x] Added a tag cloud section ("a way for the viewer to see all the tags that exist and click
+      them") below Timeline — reuses the existing `getTagFrequency()` (already built for the
+      admin form's tag-suggestion chips), rendered as `tag-chip` links sized on a simple linear
+      scale between the least- and most-used tag, linking to `/tag/<slug>`.
+- [x] Restructured the home page so real art keeps appearing between the exploration tools
+      instead of one image block up top followed by Map/Timeline/Tags back to back: favorites →
+      recent (first half) → Map → recent (second half) → Timeline → a random pick → Tags →
+      another random pick → the lifetime stat. "A user comes in and it's like they're surrounded
+      by my images, and then there's ways for them to enter in and see more" — by location, by
+      time, or by tag. Dropped the "Recent"/"Rediscover" headings on these image batches entirely
+      now that there are several of them — keeping section headings only on the three tools
+      (Map/Timeline/Tags), which are genuinely distinct destinations, not just more art.
+- [x] **Found mid-fix, not something originally designed for**: a pure code deploy (no admin data
+      write) never calls `purgeEverything()`, since that only ever fires from inside an
+      authenticated admin write handler. Caught live — a deleted `/map` route kept serving its
+      old page from a still-warm Workers Cache entry, aging well past the deploy that removed it.
+      Added `src/pages/deploy-purge.ts`, a GET endpoint gated by a `DEPLOY_PURGE_TOKEN` Worker
+      secret (not Cloudflare Access, since this needs to be callable from a deploy script/CLI
+      session rather than a browser login) that just calls `purgeEverything()`. 404s on any token
+      mismatch or if the secret isn't set. Called once after every deploy since. Worth deciding
+      whether to keep this as standing infrastructure or remove it later.
+      **Lesson learned re-confirmed several times since**: purge propagation is not instant —
+      several post-deploy checks showed a stale `CF-Cache-Status: HIT` for 15-30+ seconds after
+      calling `/deploy-purge`, before a re-check finally showed `MISS` with the new content. Don't
+      trust the first post-purge check alone; wait ~25-30s and re-verify before concluding
+      something didn't deploy.
+
+## Home page redesign, round 3: timeline scrubber, real map clustering, admin conveniences (2026-07-22)
+- [x] **Timeline scrubber**: replaced the static per-month stacked-bar list with an interactive
+      one — a native `<input type="range">` (one step per month, oldest on the left, so dragging
+      it is the "scrubbing," no hand-rolled drag/pointer JS needed) whose own track background is
+      a server-computed gradient colored by that month's dry/wet-media mix (reusing
+      `classifyMedium()`), plus a small gallery frame below showing the selected month's primary
+      image with `‹`/`›` buttons to page through multiple pieces in the same month. New
+      `src/scripts/timelineScrubber.ts`, same `setupX()`-export pattern as `mapPage.ts`. Per-piece
+      image data for the frame is embedded as a `<script type="application/json">` tag exactly
+      like the map's piece data.
+- [x] **"Second image in Recent looks smaller than the first" — not a bug, but a rule applied too
+      broadly.** The Judd-inspired "first piece spans the full row" treatment
+      (`.piece-grid.large > li:first-child`) was firing independently in every big-image batch on
+      the page (favorites, recentA, recentB, rediscoverA, rediscoverB), not just the page's actual
+      opening image — so every batch "restarted" the big-then-smaller pattern, which reads as
+      broken sizing rather than a deliberate one-time opening beat. Added a `heroFirst` prop to
+      `PieceList.astro` (only true for whichever of favorites/recentA actually renders first);
+      the CSS rule now requires a `.hero-first` class instead of firing unconditionally on every
+      `.piece-grid.large`.
+- [x] **Filename-derived date, alongside the existing filename-derived title**: selecting the
+      final image now also tries to parse a date out of the filename (`YYYY-MM-DD`/`YYYY_MM_DD`,
+      or a bare `YYYYMMDD` run — the common phone-camera pattern, e.g.
+      `IMG_20231114_153022.jpg`) and pre-fills the date field with it. The date field is never
+      genuinely empty like the title field is (new pieces default to today, edits show the real
+      date), so "only fill if empty" doesn't work here — instead tracks the value as it stood at
+      page load and only overwrites while it's still exactly that, same pattern already used for
+      the reverse-geocoded place name.
+- [x] **Location search** ("type and search... like Prospect Park, not have to click the map"):
+      added a text input + Search button next to the map in both admin forms. Forward-geocodes via
+      the same Nominatim service already used for reverse geocoding (no new dependency), takes the
+      single best match (no picker UI for ambiguous results — not worth it for a single-editor
+      tool searching an obvious named place), then reuses the existing `setLocation()` helper to
+      drop the pin/pan the map/fill the place name, so it's indistinguishable from a manual click
+      once the result comes back.
+- [x] **Real bug: portrait/tall images rendered too big to see on screen, worst on `/piece/[id]`**.
+      The image style was `max-width:100%; height:auto` — no height cap at all, so a tall scan at
+      full container width could render many multiples of the viewport's height. Fixed by adding
+      `max-height:85vh` alongside (`width:auto; height:auto` on both axes lets the browser fit
+      within whichever bound is tighter, standard "contain" behavior for a plain `<img>`). Fixed
+      in both `piece/[id].astro` and the map's inline detail panel (`mapPage.ts`'s `renderDetail`,
+      same underlying style string).
+- [x] **Map: pieces at the same location merging into what looked like one marker.** This took
+      three attempts to get right, worth recording all three since the first two seemed reasonable
+      going in:
+      1. Grouped by lat/lng rounded to ~11m and gave the group a numbered badge. **Failed in
+         practice** — pieces someone considers "the same place" (e.g. both at "Prospect Park") are
+         very often clicked at noticeably different spots on a zoomed-out map, easily well outside
+         11m of each other, so this basically never fired.
+      2. Switched the grouping key to the piece's `placeName` string instead. **Explicitly
+         rejected by the owner** — this only solves "same named place," not the actual ask, which
+         turned out to be **dynamic, zoom-dependent merging**: two pieces on opposite sides of a
+         city should merge into one badge at world zoom (a few screen pixels apart) but split back
+         into individual pins once zoomed into that city (hundreds of pixels apart). No fixed key
+         computed once from the data can do that — it has to be recomputed live from the map's
+         actual current pixel geometry every time the zoom changes.
+      3. **Correct fix**: added `leaflet.markercluster` (`npm install leaflet.markercluster
+         @types/leaflet.markercluster`) — real pixel-distance clustering that recomputes on
+         zoom/pan, shows a count bubble, splits automatically on zoom-in, and "spiderfies" (fans
+         out into individually-clickable satellite markers) a cluster that still has multiple
+         pieces once you're zoomed in as far as possible, which is what handles pieces at the
+         literal same point without needing any custom prev/next paging UI. This also *simplified*
+         `mapPage.ts` back down from the manual-grouping version — one marker per piece again, no
+         custom grouping/centroid/paging code, the library owns all of that. Recolored the
+         library's default green/yellow/orange size-tier bubbles to the site's pink/mono palette.
+      - **Bundler quirk hit along the way**: `import 'leaflet.markercluster/dist/MarkerCluster.css'`
+        (the identical pattern already working for `leaflet/dist/leaflet.css`) silently produced no
+        CSS output at all — confirmed it wasn't a typo/path issue by pointing the import at a
+        deliberately nonexistent filename, which correctly errored the build (proving the real path
+        *does* resolve), yet the real files' content never reached any emitted CSS chunk even after
+        a full cache-clear (`node_modules/.astro`, `node_modules/.vite`, `dist`) and rebuild.
+        Worked around it by inlining the plugin's small, stable base CSS directly into
+        `Base.astro`'s global stylesheet instead of importing it from the package — acceptable
+        since that CSS essentially never changes, at the minor cost of not auto-picking-up a
+        future library update to it.
+- [x] Verified every item above against local dev first, then the full `astro check` / Vitest /
+      build cycle, then deployed and reverified on production (including the two failed-then-
+      corrected map approaches — each was actually deployed and checked before being told it was
+      wrong and replaced, not just designed on paper).
+
 ## Phase 7 — Content migration
-- [ ] Inventory existing scans/photos and what metadata exists for each
-- [ ] Bulk-import pass: create piece records for everything that already has a final scan
-- [ ] Backfill locations/dates/tags for pieces missing them
-- [ ] Attach reference photos / in-progress shots / value studies / setup photos where available
+Owner is doing this manually via `/admin/new`, not an agent task.

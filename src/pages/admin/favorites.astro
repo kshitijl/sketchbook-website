@@ -55,7 +55,7 @@ if (Astro.request.method === 'POST') {
 		metadataSnapshotTaken,
 		errors: backupErrors
 	}).catch(() => {});
-	await purgeEverything(env);
+	await purgeEverything();
 
 	return Astro.redirect('/admin/favorites');
 }

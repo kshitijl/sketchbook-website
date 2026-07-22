@@ -3,7 +3,8 @@ import { env } from 'cloudflare:workers';
 import Base from '../layouts/Base.astro';
 import PieceList from '../components/PieceList.astro';
 import { getPieces } from '../lib/data';
-import { getPaintingStats, getPiecesByDateDescending, getRandomPieces } from '../lib/facets';
+import { classifyMedium, getPaintingStats, getPiecesByDateDescending, getPrimaryAsset, getRandomPieces, getTagFrequency } from '../lib/facets';
+import { imageUrl } from '../lib/images';
 import { PAGE_CACHE_CONTROL } from '../lib/cache';
 import type { Piece } from '../lib/types';
 
@@ -16,64 +17,164 @@ const favorites = data.pieces
 	.filter((p): p is Piece & { favoriteRank: number } => p.favoriteRank !== null)
 	.sort((a, b) => a.favoriteRank - b.favoriteRank);
 
-const recent = getPiecesByDateDescending(data).slice(0, 12);
+// Split into a few smaller batches rather than one big block, so real art keeps showing up
+// between the map/timeline/tags sections instead of being front-loaded into a single wall of
+// images followed by all the "explore by X" tools in a row.
+const allByDate = getPiecesByDateDescending(data);
+const recentA = allByDate.slice(0, 6);
+const recentB = allByDate.slice(6, 12);
 // Picked at render time, which — per the purge-on-write cache policy — only happens right after
 // an edit or for the first visitor at a given edge location. So this is "a random pick that
 // changes whenever you edit something," not "re-randomized on every single visit." That's an
 // intentional trade against the caching model, not a bug: a truly per-visit random pick would
 // mean rendering (and therefore not caching) this page on every request.
-const rediscover = getRandomPieces(
-	data.pieces,
-	6,
-	new Set(recent.map((p) => p.id))
-);
+const shown = new Set(allByDate.slice(0, 12).map((p) => p.id));
+const rediscoverA = getRandomPieces(data.pieces, 6, shown);
+rediscoverA.forEach((p) => shown.add(p.id));
+const rediscoverB = getRandomPieces(data.pieces, 6, shown);
+
+const tagFrequency = getTagFrequency(data);
+const maxTagCount = tagFrequency[0]?.count ?? 1;
+
+// Map data — escape `<` so a stray `</script>` inside a title/notes field can't break out of
+// this tag.
+const piecesJson = JSON.stringify(data.pieces).replace(/</g, '\\u003c');
+
+// Timeline scrubber: one step per month (not per piece — a slider can't cleanly pick out a single
+// piece from a whole collection, and the point is coarse "roughly when" scrubbing, not fine motor
+// precision), oldest-first so it reads left-to-right like a normal timeline. Each month also
+// tracks a dry/wet-media count so the scrubber's own track can be colored by what was being made
+// then — "he was doing a lot of gouache in this stretch" should be visible before you even touch it.
+const byMonth = new Map<string, { pieces: Piece[]; dry: number; wet: number; unclassified: number }>();
+for (const piece of allByDate) {
+	const month = piece.date.slice(0, 7); // "YYYY-MM"
+	const bucket = byMonth.get(month) ?? { pieces: [], dry: 0, wet: 0, unclassified: 0 };
+	bucket.pieces.push(piece);
+	bucket[classifyMedium(piece.tags)] += 1;
+	byMonth.set(month, bucket);
+}
+const months = [...byMonth.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+
+// A dry-media-heavy month leans toward this gray-brown, a wet-media-heavy month toward this blue —
+// plain linear interpolation between the two, no per-medium (watercolor vs oil vs gouache) detail,
+// reusing the same dry/wet split classifyMedium() already provides everywhere else.
+function monthColor(counts: { dry: number; wet: number; unclassified: number }): string {
+	const total = counts.dry + counts.wet + counts.unclassified || 1;
+	const wetRatio = counts.wet / total;
+	const r = Math.round(168 - wetRatio * 100);
+	const g = Math.round(160 - wetRatio * 80);
+	const b = Math.round(150 + wetRatio * 105);
+	return `rgb(${r},${g},${b})`;
+}
+const bandWidth = 100 / (months.length || 1);
+const timelineGradient = months
+	.map(([, counts], i) => {
+		const color = monthColor(counts);
+		return `${color} ${(i * bandWidth).toFixed(2)}%, ${color} ${((i + 1) * bandWidth).toFixed(2)}%`;
+	})
+	.join(', ');
+
+// Escape `<` so a stray `</script>` inside a title/notes field can't break out of this tag.
+const timelineJson = JSON.stringify(
+	months.map(([month, bucket]) => ({
+		month,
+		pieces: bucket.pieces.map((p) => {
+			const asset = getPrimaryAsset(p);
+			return { id: p.id, title: p.title, date: p.date, imageUrl: asset ? imageUrl(asset.r2Key) : '' };
+		})
+	}))
+).replace(/</g, '\\u003c');
 ---
 
 <Base title="Sketches & paintings">
-	<h1>Sketches &amp; paintings</h1>
+	{favorites.length > 0 && <PieceList pieces={favorites} large heroFirst />}
 
-	{data.pinnedLinks.length > 0 && (
-		<p>
-			{data.pinnedLinks.map((link) => (
-				<a href={link.href}>{link.label}</a>
-			))}
-		</p>
+	{recentA.length > 0 ? (
+		<PieceList pieces={recentA} large heroFirst={favorites.length === 0} />
+	) : (
+		favorites.length === 0 && <p><em>Nothing uploaded yet.</em></p>
 	)}
 
-	{paintingStats.lifetimeCount > 0 && (
+	<section>
+		<h2>Map</h2>
+		{data.pieces.length === 0 ? (
+			<p><em>Nothing uploaded yet.</em></p>
+		) : (
+			<>
+				<p><em>Hover a pin for a preview, click it for the full piece below.</em></p>
+				<div id="map" style="height:65vh;"></div>
+				<div id="piece-detail" style="margin-top:1.5rem;"></div>
+			</>
+		)}
+	</section>
+
+	{recentB.length > 0 && <PieceList pieces={recentB} large />}
+
+	{months.length > 0 && (
 		<section>
+			<h2>Timeline</h2>
+			<p><em>Drag to scrub through time — the color shows dry vs. wet media in that stretch.</em></p>
+			<input
+				type="range"
+				id="timeline-range"
+				class="timeline-scrubber"
+				min="0"
+				max={months.length - 1}
+				step="1"
+				value={months.length - 1}
+				style={`--timeline-gradient: linear-gradient(to right, ${timelineGradient});`}
+			/>
+			<div class="timeline-gallery-frame">
+				<button id="timeline-prev" type="button" aria-label="Previous piece this month">‹</button>
+				<a id="timeline-piece-link" href="#">
+					<img id="timeline-image" alt="" />
+				</a>
+				<button id="timeline-next" type="button" aria-label="Next piece this month">›</button>
+			</div>
+			<p><em id="timeline-caption"></em></p>
+		</section>
+	)}
+
+	{rediscoverA.length > 0 && <PieceList pieces={rediscoverA} large />}
+
+	{tagFrequency.length > 0 && (
+		<section>
+			<h2>Tags</h2>
 			<p>
-				<strong>{paintingStats.lifetimeCount}</strong> paintings in your lifetime —{' '}
-				<strong>{paintingStats.yearCount}</strong> of them in {paintingStats.year}.
-				{paintingStats.remainingForYearMilestone > 0 && (
-					<> {paintingStats.remainingForYearMilestone} more this year to hit {paintingStats.nextYearMilestone}.</>
-				)}
+				{tagFrequency.map(({ tag, count }) => (
+					<a
+						class="tag-chip"
+						style={`display:inline-block; margin:0 0.4rem 0.4rem 0; font-size:${(0.7 + (count / maxTagCount) * 0.6).toFixed(2)}rem;`}
+						href={`/tag/${encodeURIComponent(tag)}`}
+					>
+						#{tag}
+					</a>
+				))}
 			</p>
 		</section>
 	)}
 
-	<section>
-		<h2>Favorites</h2>
-		{favorites.length === 0 ? (
-			<p><em>No favorites marked yet.</em></p>
-		) : (
-			<PieceList pieces={favorites} />
-		)}
-	</section>
+	{rediscoverB.length > 0 && <PieceList pieces={rediscoverB} large />}
 
-	<section>
-		<h2>Recent</h2>
-		{recent.length === 0 ? (
-			<p><em>Nothing uploaded yet.</em></p>
-		) : (
-			<PieceList pieces={recent} />
-		)}
-	</section>
-
-	{rediscover.length > 0 && (
-		<section>
-			<h2>Rediscover</h2>
-			<PieceList pieces={rediscover} />
-		</section>
+	{paintingStats.lifetimeCount > 0 && (
+		<p>
+			<em>
+				{paintingStats.lifetimeCount} paintings in my lifetime —{' '}
+				{paintingStats.yearCount} of them in {paintingStats.year}.
+				{paintingStats.remainingForYearMilestone > 0 && (
+					<> {paintingStats.remainingForYearMilestone} more this year to hit {paintingStats.nextYearMilestone}.</>
+				)}
+			</em>
+		</p>
 	)}
 </Base>
+
+<script type="application/json" id="pieces-data" is:inline set:html={piecesJson} />
+<script type="application/json" id="timeline-data" is:inline set:html={timelineJson} />
+
+<script>
+	import { setupMap } from '../scripts/mapPage';
+	import { setupTimelineScrubber } from '../scripts/timelineScrubber';
+	setupMap();
+	setupTimelineScrubber();
+</script>

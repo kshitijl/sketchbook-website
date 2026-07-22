@@ -1,17 +1,31 @@
 ---
-import PieceThumb from './PieceThumb.astro';
+import { getPrimaryAsset } from '../lib/facets';
+import { imageUrl } from '../lib/images';
 import type { Piece } from '../lib/types';
 
 interface Props {
 	pieces: Piece[];
+	/** Bigger cards, fewer per row — for the top-of-page gallery. */
+	large?: boolean;
+	/** Forces the first piece to span the full row as a big opening image. Only meaningful with
+	 * `large`, and only meant for the page's actual first gallery — pass this on more than one
+	 * batch on the same page and every one of them independently "restarts" the big-then-smaller
+	 * pattern, which reads as a broken/inconsistent size rather than a deliberate opening beat. */
+	heroFirst?: boolean;
 }
-const { pieces } = Astro.props;
+const { pieces, large = false, heroFirst = false } = Astro.props;
 ---
 
-<ul style="list-style:none; padding:0;">
-	{pieces.map((piece) => (
-		<li style="margin-bottom:0.5rem;">
-			<a href={`/piece/${piece.id}`}><PieceThumb piece={piece} />{piece.title}</a> — {piece.date}
-		</li>
-	))}
+<ul class:list={['piece-grid', { large, 'hero-first': heroFirst }]}>
+	{pieces.map((piece) => {
+		const asset = getPrimaryAsset(piece);
+		return (
+			<li>
+				<a href={`/piece/${piece.id}`}>
+					{asset && <img src={imageUrl(asset.r2Key)} alt={piece.title} loading="lazy" />}
+					<span class="caption">{piece.title} — {piece.date}</span>
+				</a>
+			</li>
+		);
+	})}
 </ul>

@@ -35,7 +35,7 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 		<meta name="twitter:card" content={image ? 'summary_large_image' : 'summary'} />
 		<style is:global>
 			:root {
-				color-scheme: light dark;
+				color-scheme: light;
 				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
 				--mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
@@ -46,50 +46,101 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 				--border: #141414;
 				--pink: #ff3d8f;
 				--purple: #7c5cff;
+				/* One shared gutter for the whole page — text and the full-bleed gallery images
+				   must use the exact same inset or they visibly don't line up on their left edge
+				   (confirmed against juddmercer.art's own CSS: a single `--pagePadding` variable
+				   drives both its header and its content sections the same way). */
+				--gutter: 4vw;
 			}
-			@media (prefers-color-scheme: dark) {
-				:root {
-					--bg: #141414;
-					--panel: #1c1c1c;
-					--text: #f4f2ec;
-					--text-muted: #9a9a9a;
-					--border: #f4f2ec;
-					--pink: #ff5fa0;
-					--purple: #a691ff;
-				}
-			}
-
 			* {
 				box-sizing: border-box;
 			}
 			body {
+				/* max-width was 64rem (1024px) — on any screen wider than that (i.e. most
+				   desktops/laptops), the auto-centered body sat inset from the real viewport edge
+				   by (screen width − 1024px)/2, on top of the gutter padding below, while the
+				   full-bleed gallery images (.piece-grid.large) correctly stay inset by only the
+				   gutter — a real, growing misalignment between the text and the art's left edge
+				   confirmed by both the math and juddmercer.art's own CSS: their maxPageWidth is
+				   1920px specifically so this never triggers on a real screen. Matching that. */
 				margin: 0 auto;
-				max-width: 64rem;
-				padding: 1.5rem;
+				max-width: 1920px;
+				padding: var(--gutter);
 				line-height: 1.5;
 				background: var(--bg);
 				color: var(--text);
 			}
 
-			nav {
+			/* Compact header: a small site title and a hamburger toggle, nothing else — the images
+			   are the priority, not a big heading and a full nav bar sitting above the fold. The
+			   toggle is a plain checkbox/label pair (no JS) so clicking it reveals the actual nav
+			   links as a small dropdown panel instead of them all being visible by default. */
+			.site-header {
 				display: flex;
-				flex-wrap: wrap;
+				align-items: center;
+				justify-content: space-between;
+				position: relative;
+				margin-bottom: 1rem;
+			}
+			.site-title {
+				font-family: var(--mono);
+				text-transform: uppercase;
+				font-weight: 700;
+				font-size: 0.85rem;
+				letter-spacing: 0.05em;
+				color: var(--text);
+				text-decoration: none;
+			}
+			.nav-toggle {
+				position: absolute;
+				opacity: 0;
+				width: 2rem;
+				height: 2rem;
+				top: 0;
+				right: 0;
+				margin: 0;
+				cursor: pointer;
+			}
+			.nav-toggle-label {
+				display: flex;
+				flex-direction: column;
+				gap: 4px;
+				padding: 0.25rem;
+			}
+			.nav-toggle-label span {
+				display: block;
+				width: 22px;
+				height: 2px;
+				background: var(--text);
+			}
+			nav {
+				display: none;
+				flex-direction: column;
+				position: absolute;
+				top: 100%;
+				right: 0;
+				min-width: 10rem;
+				background: var(--panel);
 				border: 2px solid var(--border);
-				margin-bottom: 1.5rem;
 				font-family: var(--mono);
 				text-transform: uppercase;
 				font-size: 0.75rem;
 				letter-spacing: 0.05em;
+				z-index: 10;
+			}
+			.nav-toggle:checked ~ nav {
+				display: flex;
 			}
 			nav a {
 				padding: 0.6rem 1rem;
 				color: var(--text);
 				text-decoration: none;
 				font-weight: 700;
-				border-right: 2px solid var(--border);
+				border-bottom: 2px solid var(--border);
+				white-space: nowrap;
 			}
 			nav a:last-child {
-				border-right: none;
+				border-bottom: none;
 			}
 			nav a:hover {
 				background: var(--pink);
@@ -97,12 +148,11 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 			}
 
 			h1 {
-				font-weight: 800;
-				letter-spacing: -0.02em;
+				font-weight: 700;
+				font-size: 1rem;
 				text-transform: uppercase;
-				border-bottom: 3px solid var(--border);
-				padding-bottom: 0.5rem;
-				margin-bottom: 1rem;
+				letter-spacing: 0.02em;
+				margin: 0 0 0.75rem 0;
 			}
 			h2 {
 				display: inline-block;
@@ -185,7 +235,178 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 				border-color: var(--purple);
 			}
 
-			img {
+			/* Image-forward card grid — shared by PieceList.astro and any page (e.g. /kind/[kind])
+			   that needs the same big-image treatment but a different underlying data shape, so
+			   it's global CSS keyed by class name rather than scoped to one component. */
+			.piece-grid {
+				list-style: none;
+				padding: 0;
+				margin: 0;
+				display: grid;
+				grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+				gap: 0.75rem;
+			}
+			.piece-grid.large {
+				/* Breaks out of the page's centered/padded container (this body's own max-width)
+				   so the art is as big as the screen allows, not confined to the reading-width
+				   column the rest of the page uses — but keeps the same shared `--gutter` on each
+				   side (see :root) rather than running truly edge-to-edge, so the image's left
+				   edge lines up with the page's text instead of sitting further out than it. Not
+				   wrapped in a bordered <section>, so it needs its own bottom margin to match that
+				   spacing. Auto-fit at a wide minimum means it's one huge piece per row on
+				   narrow/mobile screens, but naturally settles into 2-3 per row on a wide desktop
+				   window. `min(480px, 100%)` is the important part on mobile — a bare 480px
+				   minimum is wider than most phone screens, which forced the whole grid (and the
+				   image in it) past the edge of the viewport, needing a horizontal scroll to see
+				   the rest of it. Capping the minimum at 100% of the container means it never asks
+				   for more space than it has. */
+				grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr));
+				gap: 3rem;
+				margin-bottom: 1.5rem;
+				width: calc(100vw - 2 * var(--gutter));
+				position: relative;
+				left: 50%;
+				margin-left: calc(-50vw + var(--gutter));
+			}
+			.piece-grid.large.hero-first > li:first-child {
+				/* Only the page's actual opening gallery gets this (see the `heroFirst` prop on
+				   PieceList.astro) — applying it to every big-image batch on the page made later
+				   batches look broken/inconsistent (their first piece randomly huge, the rest
+				   small) rather than reading as a deliberate one-time opening beat. */
+				grid-column: 1 / -1;
+			}
+			.piece-grid a {
+				display: block;
+				color: var(--text);
+				text-decoration: none;
+			}
+			.piece-grid img {
+				display: block;
+				width: 100%;
+				aspect-ratio: 1 / 1;
+				object-fit: cover;
+			}
+			.piece-grid.large img {
+				/* Full artwork at its own proportions, not force-cropped to a square. */
+				aspect-ratio: auto;
+			}
+			.piece-grid .caption {
+				display: block;
+				margin-top: 0.35rem;
+				font-family: var(--mono);
+				font-size: 0.7rem;
+				text-transform: uppercase;
+				color: var(--text-muted);
+			}
+			.piece-grid.large .caption {
+				padding: 0 var(--gutter);
+			}
+
+			/* Timeline scrubber: a native range input, one step per month (see index.astro) —
+			   dragging it is the "scrubbing," no hand-rolled pointer/drag JS needed. Its own
+			   background is the colored month-by-month track (--timeline-gradient, computed
+			   server-side); appearance:none strips the native track chrome on both engines so
+			   that background actually shows through instead of being covered by it. */
+			.timeline-scrubber {
+				appearance: none;
+				-webkit-appearance: none;
+				width: 100%;
+				height: 2.5rem;
+				margin: 0.75rem 0;
+				border: 2px solid var(--border);
+				background: var(--timeline-gradient);
+				cursor: pointer;
+			}
+			.timeline-scrubber::-moz-range-track {
+				height: 2.5rem;
+				background: transparent;
+				border: none;
+			}
+			.timeline-scrubber::-webkit-slider-thumb {
+				-webkit-appearance: none;
+				width: 0.75rem;
+				height: 2.9rem;
+				background: var(--pink);
+				border: 2px solid var(--border);
+				cursor: pointer;
+			}
+			.timeline-scrubber::-moz-range-thumb {
+				width: 0.75rem;
+				height: 2.9rem;
+				background: var(--pink);
+				border: 2px solid var(--border);
+				border-radius: 0;
+				cursor: pointer;
+			}
+			.timeline-gallery-frame {
+				display: flex;
+				align-items: center;
+				gap: 0.75rem;
+				margin-top: 1rem;
+			}
+			.timeline-gallery-frame a {
+				flex: 1;
+				min-width: 0;
+				text-align: center;
+			}
+			.timeline-gallery-frame img {
+				display: block;
+				max-width: 100%;
+				max-height: 60vh;
+				margin: 0 auto;
+				object-fit: contain;
+			}
+			.timeline-gallery-frame button {
+				flex-shrink: 0;
+				font-size: 1.2rem;
+				padding: 0.5rem 0.75rem;
+			}
+
+			/* leaflet.markercluster's own base CSS (its dist/MarkerCluster.css and
+			   dist/MarkerCluster.Default.css) — inlined here rather than imported from the
+			   package in mapPage.ts, working around a bundler quirk where that import silently
+			   produced no CSS output at all (confirmed the import path itself resolves fine — a
+			   deliberately wrong filename correctly errors the build — the real files' content
+			   just never reached any emitted chunk). Dropped the vendor-prefixed transition
+			   properties and the IE6-8 fallback color block from the originals; neither matters
+			   for this site's actual browser support. Recolored the size-tier bubbles to the
+			   site's own palette instead of the library's default green/yellow/orange scheme —
+			   the library still owns all the actual clustering/positioning math (see
+			   src/scripts/mapPage.ts), this is just a coat of paint on its existing markup. */
+			.leaflet-cluster-anim .leaflet-marker-icon,
+			.leaflet-cluster-anim .leaflet-marker-shadow {
+				transition: transform 0.3s ease-out, opacity 0.3s ease-in;
+			}
+			.leaflet-cluster-spider-leg {
+				transition: stroke-dashoffset 0.3s ease-out, stroke-opacity 0.3s ease-in;
+			}
+			.marker-cluster {
+				background-clip: padding-box;
+				border-radius: 20px;
+			}
+			.marker-cluster div {
+				width: 30px;
+				height: 30px;
+				margin-left: 5px;
+				margin-top: 5px;
+				text-align: center;
+				border-radius: 15px;
+				font: 12px var(--mono);
+			}
+			.marker-cluster span {
+				line-height: 30px;
+			}
+			.marker-cluster-small,
+			.marker-cluster-medium,
+			.marker-cluster-large {
+				background-color: rgba(255, 61, 143, 0.25);
+			}
+			.marker-cluster-small div,
+			.marker-cluster-medium div,
+			.marker-cluster-large div {
+				background-color: var(--pink);
+				color: white;
+				font-weight: 700;
 				border: 2px solid var(--border);
 			}
 
@@ -216,17 +437,26 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 				color: var(--text-muted);
 				opacity: 0.6;
 			}
+			footer.debug a {
+				/* Admin is tucked down here since only the owner ever clicks it — styled to blend
+				   into the same muted debug text, not stand out as a normal bright link. */
+				color: inherit;
+			}
 		</style>
 	</head>
 	<body>
-		<nav>
-			<a href="/">Home</a>
-			<a href="/timeline">Timeline</a>
-			<a href="/map">Map</a>
-			<a href="/browse">Browse</a>
-			<a href="/admin">Admin</a>
-		</nav>
+		<header class="site-header">
+			<a href="/" class="site-title">Sketches &amp; Paintings</a>
+			<input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="Menu" />
+			<label for="nav-toggle" class="nav-toggle-label"><span></span><span></span><span></span></label>
+			<nav>
+				<a href="/">Home</a>
+				<a href="/kind/setup">My easel setup</a>
+			</nav>
+		</header>
 		<slot />
-		<footer class="debug" data-render-id={renderId}>rendered {renderedAt} · edge: {colo} · id: {renderId}</footer>
+		<footer class="debug" data-render-id={renderId}>
+			rendered {renderedAt} · edge: {colo} · id: {renderId} · <a href="/admin">Admin</a>
+		</footer>
 	</body>
 </html>

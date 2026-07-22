@@ -13,6 +13,11 @@ interface NominatimReverseResult {
 	};
 }
 
+interface NominatimSearchResult {
+	lat: string;
+	lon: string;
+}
+
 export interface PieceFormOptions {
 	initialLat?: number;
 	initialLng?: number;
@@ -21,12 +26,12 @@ export interface PieceFormOptions {
 	autoUseCurrentLocation?: boolean;
 }
 
-/** Wires up the location map, tag-frequency chips, asset previews, and filename-derived title
- * suggestion shared by the new-piece and edit-piece admin forms. */
+/** Wires up the location map, tag-frequency chips, asset previews, and filename-derived
+ * title/date suggestions shared by the new-piece and edit-piece admin forms. */
 export function setupPieceForm(options: PieceFormOptions = {}): void {
 	setupLocationPicker(options);
 	setupAssetPreviews();
-	setupTitleSuggestion();
+	setupFilenameSuggestions();
 	setupTagChips();
 }
 
@@ -96,6 +101,52 @@ function setupLocationPicker(options: PieceFormOptions): void {
 
 	map.on('click', (e) => setLocation(e.latlng.lat, e.latlng.lng));
 
+	// Typing a place name and searching (forward geocoding) instead of having to click the right
+	// spot on a zoomed-out world map — same Nominatim service already used for reverse geocoding
+	// above, just the other direction. Takes the single best match rather than offering a list of
+	// candidates to pick from; good enough for searching a named place like "Prospect Park" on a
+	// single-editor admin tool, not worth the extra UI for picking among ambiguous results.
+	const searchInput = document.getElementById('locationSearchInput') as HTMLInputElement | null;
+	const searchBtn = document.getElementById('locationSearchBtn') as HTMLButtonElement | null;
+	const searchStatus = document.getElementById('locationSearchStatus');
+
+	async function searchPlace(query: string): Promise<{ lat: number; lng: number } | null> {
+		try {
+			const res = await fetch(
+				`https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(query)}&limit=1`
+			);
+			if (!res.ok) return null;
+			const results = (await res.json()) as NominatimSearchResult[];
+			if (results.length === 0) return null;
+			return { lat: Number(results[0].lat), lng: Number(results[0].lon) };
+		} catch {
+			return null; // offline, rate-limited, etc.
+		}
+	}
+
+	async function runLocationSearch() {
+		const query = searchInput?.value.trim();
+		if (!query || !searchStatus) return;
+		searchStatus.textContent = 'Searching…';
+		const result = await searchPlace(query);
+		if (!result) {
+			searchStatus.textContent = `No results for "${query}" — try clicking the map instead.`;
+			return;
+		}
+		searchStatus.textContent = '';
+		setLocation(result.lat, result.lng);
+	}
+
+	searchBtn?.addEventListener('click', runLocationSearch);
+	searchInput?.addEventListener('keydown', (e) => {
+		if (e.key === 'Enter') {
+			// This input sits inside the main admin <form> — without this, Enter would submit
+			// the whole piece form instead of just running the search.
+			e.preventDefault();
+			runLocationSearch();
+		}
+	});
+
 	function useCurrentLocation() {
 		if (!navigator.geolocation) return;
 		navigator.geolocation.getCurrentPosition(
@@ -131,16 +182,32 @@ function setupAssetPreviews(): void {
 	});
 }
 
-function setupTitleSuggestion(): void {
+function setupFilenameSuggestions(): void {
 	const finalInput = document.getElementById('finalImageInput') as HTMLInputElement | null;
 	const titleInput = document.getElementById('titleInput') as HTMLInputElement | null;
-	if (!finalInput || !titleInput) return;
+	const dateInput = document.getElementById('dateInput') as HTMLInputElement | null;
+	if (!finalInput) return;
+
+	// The date field always starts with a real value (today, for a new piece; the existing date,
+	// when editing) rather than being empty like the title field does — so "only fill if empty"
+	// can't tell "still the untouched default" apart from "the user already set this on purpose."
+	// Tracking the value as it stood at page load can: only overwrite it while it's still exactly
+	// that, same idea as the reverse-geocoded place name above.
+	let lastSuggestedDate = dateInput?.value ?? '';
 
 	finalInput.addEventListener('change', () => {
 		const file = finalInput.files?.[0];
+		if (!file) return;
+
 		// Only ever fills an empty title — never overwrites something already typed/set.
-		if (file && !titleInput.value.trim()) {
+		if (titleInput && !titleInput.value.trim()) {
 			titleInput.value = suggestTitleFromFilename(file.name);
+		}
+
+		const suggestedDate = suggestDateFromFilename(file.name);
+		if (suggestedDate && dateInput && dateInput.value === lastSuggestedDate) {
+			dateInput.value = suggestedDate;
+			lastSuggestedDate = suggestedDate;
 		}
 	});
 }
@@ -153,6 +220,28 @@ function suggestTitleFromFilename(filename: string): string {
 		.replace(/\s+/g, ' ')
 		.trim();
 	return words.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+
+/** Looks for a `YYYY-MM-DD`/`YYYY_MM_DD` or bare `YYYYMMDD` run in the filename (the latter is
+ * how most phone camera apps name files, e.g. `IMG_20231114_153022.jpg`) and returns it as an
+ * ISO date string if found and it looks like a real calendar date. Best-effort, not exhaustive —
+ * covers the common cases, never blocks manual entry since the caller only uses this as a
+ * pre-fill. */
+function suggestDateFromFilename(filename: string): string | null {
+	const patterns = [/(?:^|\D)(\d{4})[-_](\d{2})[-_](\d{2})(?:\D|$)/, /(?:^|\D)(\d{4})(\d{2})(\d{2})(?:\D|$)/];
+	for (const pattern of patterns) {
+		const match = filename.match(pattern);
+		if (!match) continue;
+		const [, year, month, day] = match;
+		if (isPlausibleDate(Number(year), Number(month), Number(day))) {
+			return `${year}-${month}-${day}`;
+		}
+	}
+	return null;
+}
+
+function isPlausibleDate(year: number, month: number, day: number): boolean {
+	return year >= 1900 && year <= 2100 && month >= 1 && month <= 12 && day >= 1 && day <= 31;
 }
 
 function setupTagChips(): void {

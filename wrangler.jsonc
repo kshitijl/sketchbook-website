@@ -11,6 +11,17 @@
 	"observability": {
 		"enabled": true
 	},
+	// Workers Cache: a cache that sits in front of the Worker itself, so a hit is served without
+	// the Worker running at all. This is the mechanism that actually makes pages cached — ordinary
+	// zone-level Cache Rules only apply to a Worker's fetch() to an external origin, never to a
+	// Worker generating its own responses (our case, confirmed by a failing check-caching.mjs run
+	// against production despite a correctly-configured Cache Rule). Requires wrangler >= 4.69.0.
+	// Respects the existing Cache-Control headers already set per-page with no code changes, and
+	// automatically skips "no-store" admin routes. Purging it requires cache.purge() called from
+	// inside the Worker (see src/lib/purge.ts) — no zone-level purge reaches this cache at all.
+	"cache": {
+		"enabled": true
+	},
 	"r2_buckets": [
 		{
 			"binding": "ART_BUCKET",
@@ -28,14 +39,11 @@
 	// workers_dev explicit here means it can never be silently disabled by an unrelated flag
 	// the way it was on a `--domain` deploy attempt that then failed (a real incident during
 	// setup — the site went down until this was made explicit and redeployed).
-	"workers_dev": true,
-	// Placeholder values on purpose: empty here means the purge-on-write call and the Access
-	// defense-in-depth check both no-op (see src/lib/purge.ts, src/lib/adminGuard.ts). Real
-	// values get set as Worker secrets during the Cloudflare setup pass (`wrangler secret put`),
-	// which override these at deploy time — no code changes needed to activate either feature.
-	"vars": {
-		"CF_API_TOKEN": "",
-		"CF_ZONE_ID": "",
-		"ADMIN_EMAIL": ""
-	}
+	"workers_dev": true
+	// ADMIN_EMAIL is set as a real Worker secret (`wrangler secret put ADMIN_EMAIL`), not a `vars`
+	// entry — a secret and a `vars` entry can't share the same binding name, and this value doesn't
+	// belong in plaintext config anyway now that it's a real address rather than a placeholder. Its
+	// absence here means local dev (which has no way to set Worker secrets) leaves
+	// isAuthorizedAdminRequest() no-oping, same as before — expected, since Access itself doesn't
+	// exist locally either.
 }

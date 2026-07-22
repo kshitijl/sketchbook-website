@@ -1,22 +1,26 @@
+import { cache } from 'cloudflare:workers';
+
 /**
  * Best-effort cache purge after an admin write (see docs/architecture.md's cache policy — purge
- * on write, not TTL expiry). No-ops until CF_API_TOKEN/CF_ZONE_ID are set as real Worker secrets
- * (see docs/TODO.md) — written ahead of that setup so activating it needs no code changes, just
- * real secret values. A failure here is swallowed rather than surfaced: a missed purge self-heals
- * on the next write's purge call regardless of what that next write touches.
+ * on write, not TTL expiry).
+ *
+ * This calls the Workers Cache runtime API (`cache.purge()`), NOT the zone-level Cache Purge HTTP
+ * API — a real correction made after live testing showed pages weren't actually being cached at
+ * all. Workers Cache (the `"cache": { "enabled": true }` setting in wrangler.jsonc) is a distinct
+ * mechanism from ordinary zone/Cache-Rules-based caching, and per Cloudflare's own docs, "no
+ * zone-level purge (via the dashboard, API, or Terraform) affects Workers Caching content" — only
+ * this in-Worker API does. This also means no external API token is needed for purging at all
+ * (unlike the zone HTTP API, which needed a Cache-Purge-scoped credential) — one less piece of
+ * account setup.
+ *
+ * Failures are swallowed rather than surfaced: a missed purge self-heals on the next write's purge
+ * call regardless of what that next write touches.
  */
-export async function purgeEverything(env: { CF_API_TOKEN?: string; CF_ZONE_ID?: string }): Promise<void> {
-	if (!env.CF_API_TOKEN || !env.CF_ZONE_ID) return;
+export async function purgeEverything(): Promise<void> {
 	try {
-		await fetch(`https://api.cloudflare.com/client/v4/zones/${env.CF_ZONE_ID}/purge_cache`, {
-			method: 'POST',
-			headers: {
-				Authorization: `Bearer ${env.CF_API_TOKEN}`,
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify({ purge_everything: true })
-		});
+		await cache.purge({ purgeEverything: true });
 	} catch {
-		// Best-effort — see comment above.
+		// Best-effort — see comment above. Also expected to no-op/fail harmlessly under local dev,
+		// where there's no real Workers Cache to purge.
 	}
 }

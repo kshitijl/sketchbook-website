@@ -1,14 +1,13 @@
 /**
- * Invalidation is purge-driven, not TTL-driven: every successful admin write triggers a
- * Cloudflare "purge everything" API call (implemented in Phase 5, alongside the admin write
- * handlers that are its only caller), so Cloudflare's edge copy is invalidated the instant
- * something changes. See docs/architecture.md. The values below are a generous ceiling, not the
- * actual freshness mechanism — Astro reruns on every edit (via purge) and otherwise at most once
- * every 30 days:
+ * Invalidation is purge-driven, not TTL-driven: every successful admin write calls
+ * `cache.purge({ purgeEverything: true })` (see src/lib/purge.ts, called from the admin write
+ * handlers), so Workers Cache's copy is invalidated the instant something changes. See
+ * docs/architecture.md. The values below are a generous ceiling, not the actual freshness
+ * mechanism — Astro reruns on every edit (via purge) and otherwise at most once every 30 days:
  *
- * - `s-maxage` (Cloudflare's edge): 30 days. Purge — not expiry — is what keeps this fresh in the
- *   normal case; a missed/failed purge is self-healing since the *next* edit purges everything
- *   again regardless of what it touched.
+ * - `s-maxage` (Workers Cache — the cache in front of the Worker itself): 30 days. Purge — not
+ *   expiry — is what keeps this fresh in the normal case; a missed/failed purge is self-healing
+ *   since the *next* edit purges everything again regardless of what it touched.
  * - `max-age` (the visitor's own browser): 1 minute. Deliberately short (rather than, say, an
  *   hour) mainly so the site owner can debug locally/in production without constantly clearing
  *   their own browser cache — traffic between a browser and Cloudflare's edge for a re-ask is

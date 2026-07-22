@@ -79,7 +79,7 @@ if (piece && Astro.request.method === 'POST') {
 			metadataSnapshotTaken: deleteMetadataSnapshotTaken,
 			errors: deleteBackupErrors
 		}).catch(() => {});
-		await purgeEverything(env);
+		await purgeEverything();
 		return Astro.redirect('/admin');
 	}
 
@@ -107,9 +107,10 @@ if (piece && Astro.request.method === 'POST') {
 	// every provided file server-side too, so a wrong file type fails clearly instead of silently
 	// uploading something an <img> tag can't display.
 	for (const { field, label } of ASSET_KIND_FIELDS) {
-		const file = formData.get(field);
-		if (file instanceof File && file.size > 0 && !file.type.startsWith('image/')) {
-			errors.push(`${label}: "${file.name}" doesn't look like an image (${file.type || 'unknown type'}).`);
+		for (const file of formData.getAll(field)) {
+			if (file instanceof File && file.size > 0 && !file.type.startsWith('image/')) {
+				errors.push(`${label}: "${file.name}" doesn't look like an image (${file.type || 'unknown type'}).`);
+			}
 		}
 	}
 
@@ -119,23 +120,30 @@ if (piece && Astro.request.method === 'POST') {
 			.map((t) => t.trim().toLowerCase())
 			.filter(Boolean);
 
+		// Assets are a bag of images tagged by kind, not one slot per kind — a piece can have several
+		// reference photos, setup shots, etc. Removal and addition are independent per-asset actions
+		// (checking "remove" on an existing image and adding a new one of the same kind is how a
+		// single image gets "replaced") rather than a kind-level replace, since a kind can already
+		// have more than one existing asset.
 		type AssetUpdate =
-			| { kind: AssetKind; action: 'remove' }
-			| { kind: AssetKind; action: 'add' | 'replace'; assetId: string; r2Key: string; width: number; height: number };
+			| { action: 'remove'; assetId: string }
+			| { action: 'add'; kind: AssetKind; assetId: string; r2Key: string; width: number; height: number };
 		const assetUpdates: AssetUpdate[] = [];
+
+		for (const asset of piece.assets) {
+			if (formData.get(`remove_asset_${asset.id}`) === 'on') {
+				assetUpdates.push({ action: 'remove', assetId: asset.id });
+			}
+		}
 
 		let imagesBackedUp = 0;
 		const backupErrors: string[] = [];
+		const existingAssetIds = new Set(piece.assets.map((a) => a.id));
 		for (const { kind, field } of ASSET_KIND_FIELDS) {
-			const removeFlag = formData.get(`remove_${field}`) === 'on';
-			const file = formData.get(field);
-			const hasNewFile = file instanceof File && file.size > 0;
-
-			if (removeFlag) {
-				assetUpdates.push({ kind, action: 'remove' });
-			} else if (hasNewFile && file instanceof File) {
-				const existingAsset = piece.assets.find((a) => a.kind === kind);
-				const assetId = existingAsset?.id ?? generateAssetId(new Set(piece.assets.map((a) => a.id)));
+			for (const file of formData.getAll(field)) {
+				if (!(file instanceof File) || file.size === 0) continue;
+				const assetId = generateAssetId(existingAssetIds);
+				existingAssetIds.add(assetId);
 				const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
 				const r2Key = buildAssetKey(piece.id, assetId, ext);
 				const buffer = await file.arrayBuffer();
@@ -150,14 +158,7 @@ if (piece && Astro.request.method === 'POST') {
 				} catch (err) {
 					backupErrors.push(`Failed to back up ${r2Key}: ${String(err)}`);
 				}
-				assetUpdates.push({
-					kind,
-					action: existingAsset ? 'replace' : 'add',
-					assetId,
-					r2Key,
-					width: dims?.width ?? 0,
-					height: dims?.height ?? 0
-				});
+				assetUpdates.push({ action: 'add', kind, assetId, r2Key, width: dims?.width ?? 0, height: dims?.height ?? 0 });
 			}
 		}
 
@@ -171,17 +172,10 @@ if (piece && Astro.request.method === 'POST') {
 			p.tags = tags;
 			p.notes = values.notes;
 
+			const removeIds = new Set(assetUpdates.filter((u) => u.action === 'remove').map((u) => u.assetId));
+			p.assets = p.assets.filter((a) => !removeIds.has(a.id));
 			for (const update of assetUpdates) {
-				if (update.action === 'remove') {
-					p.assets = p.assets.filter((a) => a.kind !== update.kind);
-				} else if (update.action === 'replace') {
-					const existing = p.assets.find((a) => a.kind === update.kind);
-					if (existing) {
-						existing.r2Key = update.r2Key;
-						existing.width = update.width;
-						existing.height = update.height;
-					}
-				} else {
+				if (update.action === 'add') {
 					p.assets.push({
 						id: update.assetId,
 						kind: update.kind,
@@ -208,7 +202,7 @@ if (piece && Astro.request.method === 'POST') {
 			metadataSnapshotTaken,
 			errors: backupErrors
 		}).catch(() => {});
-		await purgeEverything(env);
+		await purgeEverything();
 
 		return Astro.redirect(`/piece/${piece.id}`);
 	}
@@ -235,7 +229,7 @@ if (piece && Astro.request.method === 'POST') {
 					<label>Title<br /><input type="text" id="titleInput" name="title" value={values.title} required /></label>
 				</p>
 				<p>
-					<label>Date<br /><input type="date" name="date" value={values.date} required /></label>
+					<label>Date<br /><input type="date" id="dateInput" name="date" value={values.date} required /></label>
 				</p>
 				<p>
 					<label>Stage<br />
@@ -250,8 +244,12 @@ if (piece && Astro.request.method === 'POST') {
 					<strong>Location</strong><br />
 					<input type="hidden" id="latInput" name="lat" value={values.lat} />
 					<input type="hidden" id="lngInput" name="lng" value={values.lng} />
+					<input type="text" id="locationSearchInput" placeholder="Search for a place (e.g. Prospect Park)" />
+					<button type="button" id="locationSearchBtn">Search</button>
+					<br />
 					<button type="button" id="useCurrentLocationBtn">Use my current location</button>
 					<span id="locationReadout">Selected: {values.lat}, {values.lng}</span>
+					<span id="locationSearchStatus" style="display:block; color:var(--text-muted); font-size:0.85rem;"></span>
 					<div id="locationMap" style="height:280px; margin-top:0.5rem;"></div>
 				</p>
 				<p>
@@ -277,23 +275,22 @@ if (piece && Astro.request.method === 'POST') {
 
 				<h2>Photos</h2>
 				{ASSET_KIND_FIELDS.map(({ kind, field, label }) => {
-					const existing = piece.assets.find((a) => a.kind === kind);
+					const existingForKind = piece.assets.filter((a) => a.kind === kind);
 					return (
 						<div style="margin-bottom:1rem; padding:0.5rem; border:1px solid #ccc;">
 							<strong>{label}</strong><br />
-							{existing && (
-								<>
+							{existingForKind.map((asset) => (
+								<div style="margin:0.5rem 0;">
 									<img
-										src={imageUrl(existing.r2Key)}
+										src={imageUrl(asset.r2Key)}
 										alt={label}
-										style="max-width:200px; max-height:200px; display:block; margin:0.5rem 0;"
+										style="max-width:200px; max-height:200px; display:block;"
 									/>
-									<label><input type="checkbox" name={`remove_${field}`} /> Remove this image</label>
-									<br />
-								</>
-							)}
+									<label><input type="checkbox" name={`remove_asset_${asset.id}`} /> Remove this image</label>
+								</div>
+							))}
 							<label>
-								{existing ? 'Replace with' : 'Add'} image:
+								Add {label.toLowerCase()}{kind !== 'final' && ' (you can select more than one)'}:
 								<input
 									type="file"
 									id={kind === 'final' ? 'finalImageInput' : undefined}
@@ -301,6 +298,7 @@ if (piece && Astro.request.method === 'POST') {
 									data-preview-id={`preview-${field}`}
 									name={field}
 									accept="image/*"
+									multiple={kind !== 'final'}
 								/>
 							</label>
 							<br />
