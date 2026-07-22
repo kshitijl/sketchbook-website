@@ -9,6 +9,7 @@ import { ASSET_KIND_FIELDS } from '../../../lib/assetKinds';
 import { imageUrl } from '../../../lib/images';
 import { purgeEverything } from '../../../lib/purge';
 import { isAuthorizedAdminRequest } from '../../../lib/adminGuard';
+import { backupAsset, backupPieceData } from '../../../lib/backup';
 import type { AssetKind, Stage } from '../../../lib/types';
 
 Astro.response.headers.set('Cache-Control', 'no-store');
@@ -54,9 +55,14 @@ if (piece && Astro.request.method === 'POST') {
 	const formData = await Astro.request.formData();
 
 	if (formData.get('intent') === 'delete') {
-		await updatePieces(env.ART_BUCKET, (d) => {
+		// Only the JSON pointer entry is removed here — the underlying R2 image objects are never
+		// deleted by this app (intentionally; see docs/architecture.md's Backups section), so
+		// there's nothing to un-delete even without a backup for this specific action. Still back
+		// up the resulting metadata document, same as any other write.
+		const saved = await updatePieces(env.ART_BUCKET, (d) => {
 			d.pieces = d.pieces.filter((p) => p.id !== piece.id);
 		});
+		await backupPieceData(env.BACKUP_BUCKET, saved).catch(() => {});
 		await purgeEverything(env);
 		return Astro.redirect('/admin');
 	}
@@ -116,9 +122,10 @@ if (piece && Astro.request.method === 'POST') {
 				const r2Key = buildAssetKey(piece.id, assetId, ext);
 				const buffer = await file.arrayBuffer();
 				const dims = getImageDimensions(new Uint8Array(buffer));
-				await env.ART_BUCKET.put(r2Key, buffer, {
-					httpMetadata: { contentType: file.type || 'application/octet-stream' }
-				});
+				const contentType = file.type || 'application/octet-stream';
+				await env.ART_BUCKET.put(r2Key, buffer, { httpMetadata: { contentType } });
+				// Best-effort: a backup failure must never break the actual upload it's shadowing.
+				await backupAsset(env.BACKUP_BUCKET, r2Key, buffer, contentType).catch(() => {});
 				assetUpdates.push({
 					kind,
 					action: existingAsset ? 'replace' : 'add',
@@ -130,7 +137,7 @@ if (piece && Astro.request.method === 'POST') {
 			}
 		}
 
-		await updatePieces(env.ART_BUCKET, (d) => {
+		const saved = await updatePieces(env.ART_BUCKET, (d) => {
 			const p = d.pieces.find((pp) => pp.id === piece.id);
 			if (!p) return;
 			p.title = values.title;
@@ -161,6 +168,7 @@ if (piece && Astro.request.method === 'POST') {
 				}
 			}
 		});
+		await backupPieceData(env.BACKUP_BUCKET, saved).catch(() => {});
 		await purgeEverything(env);
 
 		return Astro.redirect(`/piece/${piece.id}`);

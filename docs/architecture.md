@@ -167,6 +167,59 @@ needed sanity check, every page also renders a small debug footer (see Base.astr
 render timestamp and edge colo — if reloading the same URL keeps showing the same timestamp,
 that request was served from cache, not re-rendered.
 
+## Backups
+
+R2 has no native object/bucket versioning (still just a feature request, not a real feature —
+checked directly, not assumed) and no snapshot mechanism resembling ZFS/LVM. R2's own advertised
+durability (eleven 9s annually) is real but addresses a different problem than what this section is
+for: it's a guarantee against *infrastructure* failure, and explicitly **not** against intentional
+or accidental *deletion* — which is exactly the risk (a bug in this app's own code, or a stray
+dashboard click) that backups here are meant to cover.
+
+One relevant fact already true by construction: the admin app **never calls `.delete()` on an image
+object**. "Remove this image" and "delete this piece" only ever edit the JSON pointer document
+(`data/pieces.json`) — the underlying R2 bytes are simply de-referenced, never destroyed. So the
+real risk is concentrated almost entirely in the metadata document itself (tags, titles, notes,
+locations, favorite ranks, and the asset-id → r2Key links tying pieces to their images) — if that
+JSON gets corrupted or wrongly overwritten by a bug, the raw image bytes might still physically
+exist in R2, but disorganized and hard to find without the manifest that ties them together.
+
+**Design**: a second R2 bucket (`31-art-website-backups`, bound as `BACKUP_BUCKET`), append-only —
+nothing ever deletes from it, specifically so an accidental delete on the primary bucket can't
+propagate into destroying the backup copy too. Two independent mechanisms feed it:
+
+1. **On-write (immediate)** — `src/lib/backup.ts`, called directly from every admin write handler
+   alongside the existing `purgeEverything()` call:
+   - Every uploaded image is also written to the backup bucket under the same key, synchronously,
+     in the same request, using the bytes already in memory from the upload — no separate sync job,
+     no delay, no window of vulnerability between upload and next backup run.
+   - Every metadata write also saves a full, timestamped, **never-overwritten** snapshot
+     (`backups/pieces/<timestamp>.json`) — at this document's size (a few hundred KB even at full
+     scale), keeping every snapshot ever taken for years costs a rounding error in storage, so
+     there's no pruning logic to get wrong.
+   - Both are best-effort: a backup failure is swallowed (`.catch(() => {})`), never allowed to
+     fail the actual write it's shadowing.
+2. **Daily reconciliation (self-healing safety net)** — `backup-worker/`, a small, separate, plain
+   Cloudflare Worker (deliberately **not** folded into the main Astro app, even though Astro's
+   Cloudflare adapter does support a custom entrypoint that adds a `scheduled()` handler alongside
+   Astro's own — that's a newer, less-traveled integration path, and this is exactly the piece
+   where "boring and hard to break" matters more than "one fewer thing to deploy"). Runs once a
+   day (`triggers.crons` in `backup-worker/wrangler.jsonc`) with its own bindings to both buckets:
+   reads the current metadata, checks every referenced image has a backup copy and copies any that
+   don't (self-healing anything the on-write path ever missed), takes a redundant metadata
+   snapshot, and writes a status report (`backups/status.json`) that `/admin/backups` reads and
+   displays — last-run time (flagged stale if it's been notably longer than a day, which usually
+   means the Cron Trigger itself stopped firing rather than a run failing), images checked/copied,
+   and any errors. Has no public route (`workers_dev: false`, no custom domain) since it only ever
+   needs to run on its own schedule; its `fetch` handler exists solely so the same check can be
+   manually re-run on demand (via `wrangler dev --remote` or the dashboard) for verification,
+   without waiting for the next scheduled tick.
+
+**What this doesn't cover**: an off-Cloudflare copy (protecting against, say, the whole Cloudflare
+account being compromised or suspended, not just an app bug) — a strictly larger, different threat
+model than "bugs in this code" than what was asked for. Worth considering later if wanted, not
+built now.
+
 ## Images: R2 + on-demand transforms
 
 Originals land in R2 (zero egress fees, ~$0.015/GB/mo). Thumbnail/medium sizes are not separately

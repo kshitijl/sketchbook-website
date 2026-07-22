@@ -6,6 +6,7 @@ import { getPieces, updatePieces } from '../../lib/data';
 import { compareDatesDescending } from '../../lib/facets';
 import { purgeEverything } from '../../lib/purge';
 import { isAuthorizedAdminRequest } from '../../lib/adminGuard';
+import { backupPieceData } from '../../lib/backup';
 
 Astro.response.headers.set('Cache-Control', 'no-store');
 
@@ -32,12 +33,13 @@ if (Astro.request.method === 'POST') {
 	entries.sort((a, b) => a.rank - b.rank);
 	const orderedIds = entries.map((e) => e.id);
 
-	await updatePieces(env.ART_BUCKET, (data) => {
+	const saved = await updatePieces(env.ART_BUCKET, (data) => {
 		for (const piece of data.pieces) {
 			const idx = orderedIds.indexOf(piece.id);
 			piece.favoriteRank = idx === -1 ? null : idx + 1;
 		}
 	});
+	await backupPieceData(env.BACKUP_BUCKET, saved).catch(() => {});
 	await purgeEverything(env);
 
 	return Astro.redirect('/admin/favorites');

@@ -1,0 +1,29 @@
+{
+	"$schema": "../node_modules/wrangler/config-schema.json",
+	"name": "31-art-website-backup-worker",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-07-21",
+	// No public route on purpose: this Worker only needs to run on its Cron Trigger. No
+	// workers.dev URL means no public endpoint to think about auth for.
+	"workers_dev": false,
+	"observability": {
+		"enabled": true
+	},
+	"r2_buckets": [
+		{
+			"binding": "ART_BUCKET",
+			"bucket_name": "31-art-website-data"
+		},
+		{
+			"binding": "BACKUP_BUCKET",
+			"bucket_name": "31-art-website-backups"
+		}
+	],
+	"triggers": {
+		// Once a day. Cheap insurance against the on-write backup path ever silently failing or
+		// being bypassed (e.g. a future admin write path that forgets to call it) — this
+		// reconciles by checking every referenced image has a backup copy and self-healing any
+		// gaps, plus taking a redundant metadata snapshot. See docs/architecture.md.
+		"crons": ["0 9 * * *"]
+	}
+}

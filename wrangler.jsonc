@@ -15,6 +15,10 @@
 		{
 			"binding": "ART_BUCKET",
 			"bucket_name": "31-art-website-data"
+		},
+		{
+			"binding": "BACKUP_BUCKET",
+			"bucket_name": "31-art-website-backups"
 		}
 	],
 	// Explicit on purpose: the Astro Cloudflare adapter regenerates its own deploy-time config

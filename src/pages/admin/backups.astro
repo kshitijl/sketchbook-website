@@ -1,0 +1,77 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../layouts/Base.astro';
+import { BACKUP_STATUS_KEY, BACKUP_SNAPSHOTS_PREFIX, type BackupStatus } from '../../lib/backup';
+
+Astro.response.headers.set('Cache-Control', 'no-store');
+
+const statusObj = await env.BACKUP_BUCKET.get(BACKUP_STATUS_KEY);
+const status: BackupStatus | null = statusObj ? await statusObj.json() : null;
+
+const listing = await env.BACKUP_BUCKET.list({ prefix: BACKUP_SNAPSHOTS_PREFIX, limit: 1000 });
+const snapshotKeys = listing.objects.map((o) => o.key).sort().reverse();
+const recentSnapshots = snapshotKeys.slice(0, 20);
+
+const hoursSinceLastRun = status ? (Date.now() - new Date(status.ranAt).getTime()) / (1000 * 60 * 60) : null;
+// The reconciliation job runs daily — flag as stale if it hasn't run in noticeably longer than a
+// day, which usually means the Cron Trigger itself stopped firing rather than a run failing
+// (a failed run still writes a status file with its errors listed).
+const isStale = hoursSinceLastRun === null || hoursSinceLastRun > 30;
+---
+
+<Base title="Backups">
+	<h1>Backups</h1>
+
+	<section>
+		<h2>Daily reconciliation check</h2>
+		{!status ? (
+			<p>
+				<em>No reconciliation run recorded yet — the daily job (backup-worker/) hasn't run for
+				the first time. This is expected until its first scheduled tick, or it can be triggered
+				manually — see backup-worker/README or docs/TODO.md.</em>
+			</p>
+		) : (
+			<>
+				<p>
+					<strong style={isStale ? 'color:var(--accent-3);' : 'color:var(--purple);'}>
+						{isStale ? 'STALE — ' : 'Healthy — '}
+					</strong>
+					last ran {status.ranAt} ({hoursSinceLastRun !== null ? Math.round(hoursSinceLastRun) : '?'} hours ago)
+				</p>
+				<p>
+					{status.imagesChecked} image{status.imagesChecked === 1 ? '' : 's'} checked,{' '}
+					{status.imagesCopied} newly backed up this run, metadata snapshot{' '}
+					{status.metadataSnapshotTaken ? 'taken' : 'FAILED'}.
+				</p>
+				{status.errors.length > 0 && (
+					<>
+						<p style="color:var(--accent-3);"><strong>Errors from the last run:</strong></p>
+						<ul style="color:var(--accent-3);">
+							{status.errors.map((error) => (
+								<li>{error}</li>
+							))}
+						</ul>
+					</>
+				)}
+			</>
+		)}
+	</section>
+
+	<section>
+		<h2>Recent metadata snapshots</h2>
+		<p>
+			<em>
+				A full copy of the metadata document is saved to the backup bucket on every edit, plus
+				once a day by the reconciliation job — every snapshot is kept, none are ever deleted.
+			</em>
+		</p>
+		{recentSnapshots.length === 0 ? (
+			<p><em>No snapshots yet.</em></p>
+		) : (
+			<ul>
+				{recentSnapshots.map((key) => <li>{key}</li>)}
+			</ul>
+		)}
+		<p><em>{snapshotKeys.length} total snapshot{snapshotKeys.length === 1 ? '' : 's'} kept.</em></p>
+	</section>
+</Base>

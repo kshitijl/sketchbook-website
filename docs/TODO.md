@@ -345,6 +345,42 @@ passing. Writing these actually caught two real, live bugs (not hypothetical):
 - [ ] Deploy to production custom domain, confirm cold-region load behavior is acceptable
 - [ ] Sanity-check Tiered Cache is enabled
 
+## Backups (2026-07-22)
+Full design/rationale in docs/architecture.md's Backups section. Summary of what's built and
+verified, all against real production data (created and cleaned up throwaway test pieces):
+- [x] Second R2 bucket `31-art-website-backups` (`BACKUP_BUCKET` binding), append-only — nothing
+      ever deletes from it.
+- [x] On-write backup (`src/lib/backup.ts`) wired into every admin mutation (new piece, edit,
+      delete, favorites reorder): every uploaded image copied to the backup bucket synchronously
+      at upload time; every metadata write saves a timestamped, never-overwritten snapshot.
+      Best-effort — failures are swallowed so a backup problem can never break the actual write.
+      Verified: uploading a real piece on production immediately produced both an image copy and
+      a metadata snapshot, visible on `/admin/backups`.
+- [x] `backup-worker/` — a small, separate, plain Cloudflare Worker (deliberately not folded into
+      the main Astro app's build — see architecture doc for why) with a daily Cron Trigger
+      (`0 9 * * *`). Reconciles: checks every image referenced in the metadata has a backup copy
+      and self-heals any gaps, takes a redundant metadata snapshot, writes a status report. No
+      public route (`workers_dev: false`) since it only needs its own schedule; verified by running
+      it against real production data via `wrangler dev --remote` (not just local emulation) before
+      and after deploying for real — correct output both times (`imagesChecked`, `imagesCopied`,
+      `metadataSnapshotTaken`, `errors`).
+- [x] `/admin/backups` — shows the last reconciliation run's health (flagged **STALE** if it's been
+      notably longer than a day since the last run, which usually means the Cron Trigger itself
+      stopped rather than a run failing — a run that fails for another reason still writes a status
+      file with its errors listed) and the list of recent metadata snapshots (every one ever taken
+      is kept; the page shows the most recent 20 plus a total count). Linked from `/admin`.
+- [x] One real hiccup during setup: running `wrangler dev`/`deploy` from inside `backup-worker/`
+      initially failed with a config conflict — it was picking up a stale deploy-redirect file left
+      in the *root* project's `.wrangler/deploy/`, from the main site's Astro-adapter build
+      redirect. Fixed by always passing `--config ./wrangler.jsonc` explicitly from within
+      `backup-worker/` rather than relying on wrangler's directory auto-detection.
+- [ ] Explicitly out of scope for now (a strictly bigger, different threat model — "the whole
+      Cloudflare account is compromised/suspended" rather than "a bug in this app's own code"): an
+      off-Cloudflare copy of the backups. Worth considering later if wanted.
+- [ ] No pruning/retention policy on metadata snapshots (kept forever) since the cost is
+      negligible at this document's size — revisit only if this stops being true after years of
+      real use.
+
 ## Phase 7 — Content migration
 - [ ] Inventory existing scans/photos and what metadata exists for each
 - [ ] Bulk-import pass: create piece records for everything that already has a final scan
