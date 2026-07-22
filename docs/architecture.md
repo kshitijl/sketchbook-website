@@ -107,8 +107,10 @@ cheap to read, cheap to write, cheap to ship to the browser whole for the map/ti
 - `tags`: open vocabulary, multi-valued. Medium (watercolor, ink, oil, gouache, pencil, acrylic) and
   trips (e.g. `india-2023`) both live here — structurally identical (a piece can have several of
   either), so no reason to special-case them into their own fields.
-- `assets[].kind`: `final | reference-photo | in-progress | value-study | setup` — extend freely; a
-  new kind is just a new string value, never a schema migration.
+- `assets[].kind`: `final | unsorted | reference-photo | in-progress | value-study | setup` — extend
+  freely; a new kind is just a new string value, never a schema migration. `unsorted` is the
+  fallback kind for an "additional photo" that somehow gets uploaded without a real kind picked (see
+  **Admin form conveniences** below for the normal path, where a kind is chosen at upload time).
 
 Why `stage` gets its own field when medium/trips don't: `stage` is single-select (a piece just *is*
 finished or a study, never both), which an open `tags` array can't enforce — a real structural
@@ -351,6 +353,17 @@ first two seemed reasonable going in but solved the wrong problem:
    needed for that case. `mapPage.ts` went back to one marker per piece; the library owns all
    grouping/positioning.
 
+**Another known bundler quirk — the default marker icon**: Leaflet's built-in marker icon resolves
+its image path relative to its own CSS file at runtime, which breaks once bundled by Vite (shows up
+as a broken-image box with cut-off alt text — "Mark..." — instead of a pin). Fixed by importing the
+three marker PNGs with an explicit `?url` suffix (needed specifically because without it, Astro's
+`astro:assets` pipeline intercepts the `.png` import into a `{src,width,height}` object instead of a
+plain URL string) and calling `L.Icon.Default.mergeOptions({iconRetinaUrl, iconUrl, shadowUrl})`.
+Both `mapPage.ts` (the public map) and `pieceForm.ts` (the admin location picker) run their own
+independent Leaflet setup, so this fix had to be applied to each one separately — fixing it in one
+file doesn't fix the other, which is exactly how it briefly recurred (fixed in `mapPage.ts` first,
+found still broken in `pieceForm.ts` afterward).
+
 **Known bundler quirk**: `import 'leaflet.markercluster/dist/MarkerCluster.css'` (the identical
 pattern already working for `leaflet/dist/leaflet.css`) silently produces no CSS output — confirmed
 this isn't a bad path by pointing the import at a deliberately nonexistent filename, which correctly
@@ -464,7 +477,31 @@ following the same rule: never clobber a value the owner already set on purpose.
   single best match rather than offering a list of candidates — not worth the extra UI for
   searching an obvious named place on a tool only one person uses. Reuses the existing
   `setLocation()` helper once a result comes back, so it's indistinguishable from a manual map
-  click.
+  click. The map itself is `60vh` tall (`min-height:420px`) — a fixed 280px strip read as "a thin
+  horizontal rectangle, hard to work with."
+- **Tag photos at upload time, not on a second trip** (2026-07-22): "additional photos" upload as
+  one generic multi-file batch (`asset_extra`, one input, select as many as you want) instead of a
+  separate labeled file field per kind (reference/in-progress/value-study/setup) — picking a kind
+  per photo while still in the phone's Photos app meant reopening it once per kind. Selecting files
+  fires `setupExtraAssetTagging()` (`pieceForm.ts`), which renders a thumbnail plus a kind
+  `<select>` for every file immediately, right on the same form — tagging happens once, before ever
+  hitting Save, not "afterward on the edit page" (an intermediate design, corrected same-day once
+  it turned out that was still too many clicks). Each select is named `kind_extra_<i>`, indexed to
+  the order files appear in the input's `FileList`, which is also the order the server sees them in
+  via `formData.getAll('asset_extra')` — no need for a stable per-file id, since nothing reorders
+  between selection and submit. The edit page additionally keeps a *separate* re-kind mechanism
+  (`kind_<assetId>` selects) for assets from a previous submission — the two don't overlap.
+  **A Cloudflare-workers-types quirk hit while building this**: `row.append(img, select)` failed
+  `astro check` with an overload error mentioning `content: string | ReadableStream | Response` —
+  `@cloudflare/workers-types` globally declares its own `Element` (from the `HTMLRewriter` API)
+  that collides with DOM's `Element` and shadows `.append()`'s normal multi-node signature. Two
+  `.appendChild()` calls sidestep it; worth remembering for any other DOM-building code in this
+  codebase.
+- **"Add another piece" shortcut**: `/admin/new`'s success redirect goes to `/piece/<id>?added=1`
+  instead of a bare `/piece/<id>`; `/piece/[id].astro` checks for that exact query param and only
+  then shows a `← Add another piece` link back to `/admin/new` above the title, since adding one
+  piece is usually immediately followed by adding another. Nothing else ever links to a piece with
+  `?added=1`, so this never appears for other viewers.
 
 ## Page inventory
 
