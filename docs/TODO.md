@@ -806,5 +806,36 @@ before this ever shipped to real use:
       each step confirmed by re-fetching the edit page's rendered HTML, not assumed from the response
       code alone.
 
+## Small fixes: jarring map click, tag spacing, oversized vertical images (2026-07-22)
+Four independent, directly-reported bugs, none related except by being found in the same pass.
+
+- [x] **Jarring map-click zoom-out** (`src/scripts/pieceForm.ts`, admin location picker): clicking a
+      spot on the map to place the pin called `map.setView([lat,lng], 13)` unconditionally — if you
+      were already zoomed in past level 13, clicking snapped the view back out to 13, then you had
+      to zoom back in to confirm the pin landed in the right place. Fixed by adding a `moveView`
+      parameter to `setLocation()`, defaulting to `true` (search, "use current location", initial
+      geolocation still jump the view — the target usually isn't visible yet) but passed `false`
+      from the map's own `click` handler, since a clicked point is already on screen and needs no
+      view change at all — only the marker moves. Where the view does still move, zoom is now
+      `Math.max(map.getZoom(), 13)` rather than a flat `13`, so it can zoom *in* to a sensible level
+      but never zoom back *out* below whatever you were already at.
+- [x] Admin location map grew again, `60vh`/420px → `70vh`/480px min-height (both `/admin/new` and
+      `/admin/edit/[id]`) — "just a lil bit bigger."
+- [x] `/piece/<id>`'s tag links (`#tag1#tag2#tag3`, unreadably smooshed together) got
+      `margin-right:0.6rem` — they had no separator at all between adjacent `<a>` elements.
+- [x] **Oversized vertical images on desktop, `.piece-grid.large img`** (`Base.astro`): this shared
+      class (used by every big-image section on the home page, plus `/kind/[kind]`) only had
+      `aspect-ratio: auto` to stop force-cropping to a square — no height cap at all. A portrait
+      image landing in a single-image row (e.g. one of the home page's "random pick" sections) on a
+      wide desktop window would stretch to fill the entire full-bleed row width, and at that width a
+      tall aspect ratio could render several multiples of the viewport's height, forcing a scroll to
+      see the whole piece. This is the same failure mode already fixed on `/piece/[id]` and the
+      map's inline detail panel (`max-height:85vh`) — it just hadn't been applied to this shared grid
+      class, so every page using `PieceList.astro`'s `large` variant was still exposed. Fixed with
+      the same `max-height:85vh` cap plus `width:auto; height:auto; max-width:100%; margin:0 auto`
+      (mirroring the `.timeline-gallery-frame img` pattern) — landscape images are unaffected (they
+      never approach 85vh tall at normal column widths), only portrait ones now cap out and center
+      within their column instead of overflowing it.
+
 ## Phase 7 — Content migration
 Owner is doing this manually via `/admin/new`, not an agent task.

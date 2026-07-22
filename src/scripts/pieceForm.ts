@@ -93,7 +93,11 @@ function setupLocationPicker(options: PieceFormOptions): void {
 		}
 	}
 
-	function setLocation(lat: number, lng: number) {
+	// `moveView` is false for a direct map click — the clicked point is already on screen, so
+	// snapping the view to a fixed zoom there just to place a pin was the jarring "zooms out
+	// suddenly" bug. Search and "use current location" still jump the view (the target usually
+	// isn't visible yet), but never zoom out below whatever the map is already zoomed to.
+	function setLocation(lat: number, lng: number, moveView = true) {
 		latInput!.value = lat.toFixed(6);
 		lngInput!.value = lng.toFixed(6);
 		locationReadout!.textContent = `Selected: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
@@ -102,7 +106,9 @@ function setupLocationPicker(options: PieceFormOptions): void {
 		} else {
 			marker = L.marker([lat, lng]).addTo(map);
 		}
-		map.setView([lat, lng], 13);
+		if (moveView) {
+			map.setView([lat, lng], Math.max(map.getZoom(), 13));
+		}
 
 		reverseGeocodePlaceName(lat, lng).then((suggestion) => {
 			if (!suggestion) return;
@@ -115,7 +121,7 @@ function setupLocationPicker(options: PieceFormOptions): void {
 		});
 	}
 
-	map.on('click', (e) => setLocation(e.latlng.lat, e.latlng.lng));
+	map.on('click', (e) => setLocation(e.latlng.lat, e.latlng.lng, false));
 
 	// Typing a place name and searching (forward geocoding) instead of having to click the right
 	// spot on a zoomed-out world map — same Nominatim service already used for reverse geocoding

@@ -451,8 +451,14 @@ correcting once:
     first image look randomly oversized rather than reading as deliberate.
 - **Tall/portrait images rendering too big to see on screen**: `max-width:100%; height:auto` had no
   height cap at all, so a tall scan could render many multiples of the viewport's height at full
-  container width. Fixed with `max-height:85vh` alongside (`width:auto; height:auto` on both axes),
-  on `/piece/[id]` and the map's inline detail panel.
+  container width. Fixed with `max-height:85vh` alongside (`width:auto; height:auto` on both axes)
+  on `/piece/[id]` and the map's inline detail panel first — then found, live, still missing from
+  `.piece-grid.large img` itself (`Base.astro`), the shared class every big-image section on the
+  home page and `/kind/[kind]` actually renders through. A portrait image alone in a single-image
+  row could stretch to the full-bleed row's width on a wide desktop, and at that width a tall
+  aspect ratio still blew well past the viewport height — same bug, different (and more widely
+  used) piece of CSS. Same fix applied there too, plus `margin:0 auto` to center the now-narrower
+  image within its grid column instead of leaving it flush left.
 - **The home page itself** is one continuous scroll rather than separate sections stacked
   top-to-bottom: favorites/recent → Map → more recent → Timeline → a random pick → Tags → another
   random pick → the lifetime/year stat at the very bottom (moved there from a boxed callout near
@@ -477,8 +483,17 @@ following the same rule: never clobber a value the owner already set on purpose.
   single best match rather than offering a list of candidates — not worth the extra UI for
   searching an obvious named place on a tool only one person uses. Reuses the existing
   `setLocation()` helper once a result comes back, so it's indistinguishable from a manual map
-  click. The map itself is `60vh` tall (`min-height:420px`) — a fixed 280px strip read as "a thin
-  horizontal rectangle, hard to work with."
+  click. The map itself grew twice from a fixed 280px strip ("a thin horizontal rectangle, hard to
+  work with") — first to `60vh`/420px min-height, then to `70vh`/480px ("just a lil bit bigger").
+- **Map click no longer jerks the view around**: `setLocation()` used to call
+  `map.setView([lat,lng], 13)` unconditionally on every call, including a direct map click — so
+  clicking a spot while already zoomed in past level 13 snapped the view back *out* to 13 right
+  after placing the pin, and you had to zoom back in just to confirm it landed correctly. Now takes
+  a `moveView` parameter (default `true`, used by search/geolocation, since those jump to a location
+  that usually isn't visible yet) that the map's own `click` handler passes as `false` — a clicked
+  point is already on screen, so only the marker needs to move, not the whole view. Where the view
+  does move, zoom is `Math.max(map.getZoom(), 13)` instead of a flat `13`, so it can zoom in but
+  never back out below wherever you already were.
 - **Tag photos at upload time, not on a second trip** (2026-07-22): "additional photos" upload as
   one generic multi-file batch (`asset_extra`, one input, select as many as you want) instead of a
   separate labeled file field per kind (reference/in-progress/value-study/setup) — picking a kind

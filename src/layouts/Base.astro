@@ -287,8 +287,18 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 				object-fit: cover;
 			}
 			.piece-grid.large img {
-				/* Full artwork at its own proportions, not force-cropped to a square. */
+				/* Full artwork at its own proportions, not force-cropped to a square. Same
+				   max-height cap as /piece/[id] and the map's inline detail panel — without it, a
+				   tall/portrait image stretched to fill a wide desktop column (especially a
+				   single-image row, e.g. the home page's "random pick" sections) could render many
+				   multiples of the viewport's height, forcing a scroll to see the whole thing. */
 				aspect-ratio: auto;
+				width: auto;
+				height: auto;
+				max-width: 100%;
+				max-height: 85vh;
+				object-fit: contain;
+				margin: 0 auto;
 			}
 			.piece-grid .caption {
 				display: block;
