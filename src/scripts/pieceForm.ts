@@ -316,21 +316,48 @@ function isPlausibleDate(year: number, month: number, day: number): boolean {
 	return year >= 1900 && year <= 2100 && month >= 1 && month <= 12 && day >= 1 && day <= 31;
 }
 
-function setupTagChips(): void {
-	const tagsInput = document.getElementById('tagsInput') as HTMLInputElement | null;
+/** Chips both add/remove tags on click (toggling) and, in either direction, show which tags are
+ * currently in the box — including tags typed by hand, not just ones added by clicking — so
+ * selection state stays visible even once the box has more tags in it than fit on one line.
+ * Shared by the new/edit piece forms (a `<textarea id="tagsInput">`) and the bulk-tag admin page
+ * (a plain `<input id="tagsInput">`) — exported since bulk-tag doesn't need the rest of
+ * `setupPieceForm` (no location map, no file inputs). */
+export function setupTagChips(): void {
+	const tagsInput = document.getElementById('tagsInput') as HTMLInputElement | HTMLTextAreaElement | null;
 	if (!tagsInput) return;
-	document.querySelectorAll<HTMLButtonElement>('.tag-chip').forEach((chip) => {
+	const chips = document.querySelectorAll<HTMLButtonElement>('.tag-chip');
+
+	function currentTags(): string[] {
+		return tagsInput!.value
+			.split(',')
+			.map((t) => t.trim())
+			.filter(Boolean);
+	}
+
+	function refreshChipStates(): void {
+		const current = new Set(currentTags());
+		chips.forEach((chip) => {
+			const tag = chip.dataset.tag;
+			chip.classList.toggle('selected', !!tag && current.has(tag));
+		});
+	}
+
+	chips.forEach((chip) => {
 		chip.addEventListener('click', () => {
 			const tag = chip.dataset.tag;
 			if (!tag) return;
-			const current = tagsInput.value
-				.split(',')
-				.map((t) => t.trim())
-				.filter(Boolean);
-			if (!current.includes(tag)) {
+			const current = currentTags();
+			const index = current.indexOf(tag);
+			if (index === -1) {
 				current.push(tag);
-				tagsInput.value = current.join(', ');
+			} else {
+				current.splice(index, 1);
 			}
+			tagsInput.value = current.join(', ');
+			refreshChipStates();
 		});
 	});
+
+	tagsInput.addEventListener('input', refreshChipStates);
+	refreshChipStates();
 }

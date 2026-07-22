@@ -837,5 +837,39 @@ Four independent, directly-reported bugs, none related except by being found in 
       never approach 85vh tall at normal column widths), only portrait ones now cap out and center
       within their column instead of overflowing it.
 
+## Tag chip selection state, bigger tags box, bulk tagging (2026-07-22)
+Prompted directly: clicking several tag chips overflowed the single-line tags box, at which point
+there was no way to tell which tags were already in there without scrolling it horizontally.
+Separately, the owner wants to retroactively apply a newly-invented tag (e.g. "painted from life")
+across many existing pieces at once, not one edit-page visit per piece.
+
+- [x] Tag chips now show selection state: `.tag-chip.selected` (same look as `:hover`, just
+      persistent) is toggled by `setupTagChips()` (`pieceForm.ts`) whenever the tags box changes —
+      on chip click, and on the box's own `input` event, so it also reflects tags typed by hand, not
+      just ones added by clicking. Initialized once on page load too, so an edit page's pre-filled
+      tags show correctly highlighted immediately.
+- [x] **Clicking a chip now toggles**, not just adds — click again to remove that tag from the box.
+      Previously a chip could only ever add, never undo an add.
+- [x] The tags field itself changed from a single-line `<input>` to a `<textarea rows="3"
+      style="width:100%">` on both `/admin/new` and `/admin/edit/[id]` — no more horizontal
+      scrolling through an overflowing one-line box, and it's natively resizable if 3 rows isn't
+      enough.
+- [x] `setupTagChips()` exported from `pieceForm.ts` (was page-local) so it can be reused standalone
+      on a page with no location map or file inputs — see bulk-tag below. Typed to accept either an
+      `<input>` or a `<textarea>` for the same reason.
+- [x] **New `/admin/bulk-tag` page**: every piece listed with a checkbox (same list style as
+      `/admin/favorites`, thumbnail + title + date, now also showing each piece's current tags), one
+      tags field (reusing the same chip-toggle/highlight behavior above), a "Select all" checkbox,
+      and two submit buttons — **Add to selected** / **Remove from selected** — reading a shared
+      `intent=add|remove` field, the same pattern already used for the delete-piece form's
+      `intent=delete`. Add unions the given tag(s) into each selected piece's existing tags (via a
+      `Set`, so re-applying an already-present tag is a no-op, not a duplicate); remove filters them
+      back out. No pagination/search added — the piece list here is exactly as long as
+      `/admin/favorites`' already-unpaginated list, at the same collection size (~500-1,000 pieces)
+      that was already an accepted trade-off there.
+- [x] Verified locally via `astro dev`: bulk-added "painted from life" to two pieces in one request,
+      confirmed both picked it up on their `/piece/<id>` pages; bulk-removed it from one, confirmed
+      that piece lost it while the other piece (not selected in the removal request) kept it.
+
 ## Phase 7 — Content migration
 Owner is doing this manually via `/admin/new`, not an agent task.

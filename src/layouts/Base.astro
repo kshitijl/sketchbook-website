@@ -234,6 +234,14 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 				color: white;
 				border-color: var(--purple);
 			}
+			.tag-chip.selected {
+				/* Same look as :hover, but persistent — the admin form's tag chips toggle this
+				   class on/off to show which tags are currently in the tags box, since once it has
+				   enough tags to overflow, you lose visual track of what's already in there. */
+				background: var(--purple);
+				color: white;
+				border-color: var(--purple);
+			}
 
 			/* Image-forward card grid — shared by PieceList.astro and any page (e.g. /kind/[kind])
 			   that needs the same big-image treatment but a different underlying data shape, so

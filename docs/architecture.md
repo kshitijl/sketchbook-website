@@ -304,7 +304,8 @@ partially-consumed stream if the transform attempt had already started reading i
 
 A Cloudflare Access application (team domain `untitledtrading.cloudflareaccess.com`) guards
 `klauria.art/admin*` — the wildcard is what makes it cover every admin subpath (`/admin/new`,
-`/admin/edit/<id>`, `/admin/favorites`, `/admin/backups`), not just the literal `/admin` index.
+`/admin/edit/<id>`, `/admin/favorites`, `/admin/bulk-tag`, `/admin/backups`), not just the literal
+`/admin` index.
 Public read routes are outside this application entirely; they never see a login wall.
 
 - **Identity provider**: Google OAuth (an OAuth client created in Google Cloud Console, wired into
@@ -494,6 +495,23 @@ following the same rule: never clobber a value the owner already set on purpose.
   point is already on screen, so only the marker needs to move, not the whole view. Where the view
   does move, zoom is `Math.max(map.getZoom(), 13)` instead of a flat `13`, so it can zoom in but
   never back out below wherever you already were.
+- **Tag chips show selection state, and the tags box got bigger**: the tags field is a
+  `<textarea rows="3">` now, not a single-line `<input>` — clicking several chips used to overflow
+  a one-line box with no way to see what was already in there short of scrolling it horizontally.
+  Chips also now toggle (click again to remove) and stay highlighted (`.tag-chip.selected`) in sync
+  with the box's actual contents — including tags typed by hand, via an `input` listener, not just
+  ones added by clicking. `setupTagChips()` (`pieceForm.ts`) is exported standalone specifically so
+  `/admin/bulk-tag` (below) can reuse the same chip behavior without pulling in the rest of
+  `setupPieceForm` (location map, file inputs) that page doesn't need.
+- **`/admin/bulk-tag`**: apply or remove a tag across many pieces in one request, for retroactively
+  tagging something across the existing collection (e.g. inventing "painted from life" after the
+  fact) without a per-piece edit-page visit each time. Same list layout as `/admin/favorites`
+  (thumbnail + title + date, one row per piece, no pagination at this collection's size) but with a
+  checkbox instead of a rank field, plus a "Select all" toggle. One `<form>`, two submit buttons
+  (`intent=add` / `intent=remove`) sharing the same checkbox selection — mirrors the
+  `intent=delete` pattern already used by the edit page's delete-piece form. Add unions the given
+  tag(s) into each selected piece's tags via a `Set` (so re-adding an already-present tag is a
+  no-op); remove filters them back out.
 - **Tag photos at upload time, not on a second trip** (2026-07-22): "additional photos" upload as
   one generic multi-file batch (`asset_extra`, one input, select as many as you want) instead of a
   separate labeled file field per kind (reference/in-progress/value-study/setup) — picking a kind
@@ -533,7 +551,7 @@ following the same rule: never clobber a value the owner already set on purpose.
 - `/tag/<slug>` — one template, covers medium tags, trip tags, and any other descriptive tag.
 - `/kind/<kind>` — one template, covers every asset kind (`/kind/setup`, `/kind/value-study`, ...);
   same big image-forward `piece-grid large` treatment as the home page, not a small thumbnail list.
-- `/admin` — upload form, edit-piece form, favorites reorder — plain HTML forms with
+- `/admin` — upload form, edit-piece form, favorites reorder, bulk tagging — plain HTML forms with
   full-page-reload submits. Favorites reordering starts as an editable numeric rank field per row.
 - `/deploy-purge` — not a real page, a token-gated GET endpoint (see the Cache policy section) for
   purging the cache after a deploy from a CLI session that can't go through Cloudflare Access.

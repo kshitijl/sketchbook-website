@@ -1,0 +1,144 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../layouts/Base.astro';
+import PieceThumb from '../../components/PieceThumb.astro';
+import { getPieces, updatePieces } from '../../lib/data';
+import { getPiecesByDateDescending, getTagFrequency } from '../../lib/facets';
+import { purgeEverything } from '../../lib/purge';
+import { isAuthorizedAdminRequest } from '../../lib/adminGuard';
+import { backupPieceData, logBackupEvent } from '../../lib/backup';
+
+Astro.response.headers.set('Cache-Control', 'no-store');
+
+const errors: string[] = [];
+let notice = '';
+
+if (Astro.request.method === 'POST') {
+	if (!isAuthorizedAdminRequest(Astro.request, env)) {
+		return new Response('Forbidden', { status: 403 });
+	}
+
+	const formData = await Astro.request.formData();
+	const intent = formData.get('intent') === 'remove' ? 'remove' : 'add';
+	const tags = String(formData.get('tags') ?? '')
+		.split(',')
+		.map((t) => t.trim().toLowerCase())
+		.filter(Boolean);
+	const selectedIds = new Set<string>();
+	for (const [key, value] of formData.entries()) {
+		if (key.startsWith('piece_') && value === 'on') {
+			selectedIds.add(key.slice('piece_'.length));
+		}
+	}
+
+	if (tags.length === 0) errors.push('Enter at least one tag.');
+	if (selectedIds.size === 0) errors.push('Select at least one piece.');
+
+	if (errors.length === 0) {
+		const saved = await updatePieces(env.ART_BUCKET, (data) => {
+			for (const piece of data.pieces) {
+				if (!selectedIds.has(piece.id)) continue;
+				if (intent === 'remove') {
+					piece.tags = piece.tags.filter((t) => !tags.includes(t));
+				} else {
+					piece.tags = [...new Set([...piece.tags, ...tags])];
+				}
+			}
+		});
+		let metadataSnapshotTaken = false;
+		const backupErrors: string[] = [];
+		try {
+			await backupPieceData(env.BACKUP_BUCKET, saved);
+			metadataSnapshotTaken = true;
+		} catch (err) {
+			backupErrors.push(`Failed to back up metadata: ${String(err)}`);
+		}
+		await logBackupEvent(env.BACKUP_BUCKET, {
+			kind: 'on-write',
+			ranAt: new Date().toISOString(),
+			action: `Bulk ${intent === 'remove' ? 'removed' : 'added'} tag(s) ${tags.join(', ')}`,
+			imagesBackedUp: 0,
+			metadataSnapshotTaken,
+			errors: backupErrors
+		}).catch(() => {});
+		await purgeEverything();
+
+		notice = `${intent === 'remove' ? 'Removed' : 'Added'} ${tags.join(', ')} ${
+			intent === 'remove' ? 'from' : 'to'
+		} ${selectedIds.size} piece(s).`;
+	}
+}
+
+const { data } = await getPieces(env.ART_BUCKET);
+const pieces = getPiecesByDateDescending(data);
+const tagFrequency = getTagFrequency(data);
+---
+
+<Base title="Bulk tag pieces">
+	<h1>Bulk tag pieces</h1>
+	<p>
+		<em>Pick a tag (or type a new one), check the pieces it applies to, then add or remove it
+		from all of them at once.</em>
+	</p>
+
+	{errors.length > 0 && (
+		<ul style="color:var(--accent-3);">
+			{errors.map((error) => (
+				<li>{error}</li>
+			))}
+		</ul>
+	)}
+	{notice && <p><strong>{notice}</strong></p>}
+
+	{pieces.length === 0 ? (
+		<p><em>Nothing uploaded yet.</em></p>
+	) : (
+		<form method="POST">
+			<p>
+				<label>Tag(s), comma-separated<br /><input type="text" id="tagsInput" name="tags" placeholder="e.g. painted from life" /></label>
+			</p>
+			{tagFrequency.length > 0 && (
+				<p>
+					{tagFrequency.map(({ tag, count }) => (
+						<button type="button" class="tag-chip" data-tag={tag} style="margin:0 0.25rem 0.25rem 0;">
+							{tag} ({count})
+						</button>
+					))}
+				</p>
+			)}
+			<p>
+				<button type="submit" name="intent" value="add">Add to selected</button>
+				<button type="submit" name="intent" value="remove">Remove from selected</button>
+				{' '}
+				<label><input type="checkbox" id="selectAll" /> Select all</label>
+			</p>
+
+			<ul style="list-style:none; padding:0;">
+				{pieces.map((piece) => (
+					<li style="margin-bottom:0.5rem; display:flex; align-items:center; gap:0.5rem;">
+						<input type="checkbox" class="piece-checkbox" name={`piece_${piece.id}`} />
+						<PieceThumb piece={piece} size={48} />
+						<a href={`/piece/${piece.id}`}>{piece.title}</a>
+						<span style="color:var(--text-muted);">— {piece.date}{piece.tags.length > 0 ? ` — ${piece.tags.join(', ')}` : ''}</span>
+					</li>
+				))}
+			</ul>
+
+			<button type="submit" name="intent" value="add">Add to selected</button>
+			<button type="submit" name="intent" value="remove">Remove from selected</button>
+		</form>
+	)}
+</Base>
+
+<script>
+	import { setupTagChips } from '../../scripts/pieceForm';
+	setupTagChips();
+
+	const selectAll = document.getElementById('selectAll') as HTMLInputElement | null;
+	const checkboxes = document.querySelectorAll<HTMLInputElement>('.piece-checkbox');
+	selectAll?.addEventListener('change', () => {
+		checkboxes.forEach((cb) => {
+			cb.checked = selectAll.checked;
+		});
+	});
+</script>

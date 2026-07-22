@@ -299,7 +299,7 @@ if (piece && Astro.request.method === 'POST') {
 				</p>
 
 				<p>
-					<label>Tags (comma-separated)<br /><input type="text" id="tagsInput" name="tags" value={values.tags} /></label>
+					<label>Tags (comma-separated)<br /><textarea id="tagsInput" name="tags" rows="3" style="width:100%;">{values.tags}</textarea></label>
 				</p>
 				{tagFrequency.length > 0 && (
 					<p>
