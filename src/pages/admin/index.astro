@@ -2,8 +2,10 @@
 import { env } from 'cloudflare:workers';
 import Base from '../../layouts/Base.astro';
 import PieceThumb from '../../components/PieceThumb.astro';
+import BackupLog from '../../components/BackupLog.astro';
 import { getPieces } from '../../lib/data';
 import { getPiecesByDateDescending } from '../../lib/facets';
+import { getRecentBackupLog } from '../../lib/backup';
 
 // Not cached: admin is low-traffic and always wants current data. Also outside the purge-on-write
 // policy that governs public pages (see docs/architecture.md).
@@ -11,6 +13,10 @@ Astro.response.headers.set('Cache-Control', 'no-store');
 
 const { data } = await getPieces(env.ART_BUCKET);
 const pieces = getPiecesByDateDescending(data);
+
+// Shown directly here, not just linked to /admin/backups — the point is to never have to
+// remember backups exist or go looking for them.
+const recentBackupLog = await getRecentBackupLog(env.BACKUP_BUCKET, 10);
 ---
 
 <Base title="Admin">
@@ -18,20 +24,28 @@ const pieces = getPiecesByDateDescending(data);
 	<p>
 		<a href="/admin/new">+ Add a new piece</a>
 		{' · '}<a href="/admin/favorites">Reorder favorites</a>
-		{' · '}<a href="/admin/backups">Backups</a>
+		{' · '}<a href="/admin/backups">All backups</a>
 	</p>
 
-	{pieces.length === 0 ? (
-		<p><em>Nothing uploaded yet.</em></p>
-	) : (
-		<ul style="list-style:none; padding:0;">
-			{pieces.map((piece) => (
-				<li style="margin-bottom:0.5rem;">
-					<PieceThumb piece={piece} />
-					<a href={`/piece/${piece.id}`}>{piece.title}</a> — {piece.date}
-					{' '}(<a href={`/admin/edit/${piece.id}`}>edit</a>)
-				</li>
-			))}
-		</ul>
-	)}
+	<section>
+		<h2>Backups — last {recentBackupLog.length}</h2>
+		<BackupLog entries={recentBackupLog} />
+	</section>
+
+	<section>
+		<h2>Pieces</h2>
+		{pieces.length === 0 ? (
+			<p><em>Nothing uploaded yet.</em></p>
+		) : (
+			<ul style="list-style:none; padding:0;">
+				{pieces.map((piece) => (
+					<li style="margin-bottom:0.5rem;">
+						<PieceThumb piece={piece} />
+						<a href={`/piece/${piece.id}`}>{piece.title}</a> — {piece.date}
+						{' '}(<a href={`/admin/edit/${piece.id}`}>edit</a>)
+					</li>
+				))}
+			</ul>
+		)}
+	</section>
 </Base>

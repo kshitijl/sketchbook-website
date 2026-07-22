@@ -359,16 +359,30 @@ verified, all against real production data (created and cleaned up throwaway tes
 - [x] `backup-worker/` — a small, separate, plain Cloudflare Worker (deliberately not folded into
       the main Astro app's build — see architecture doc for why) with a daily Cron Trigger
       (`0 9 * * *`). Reconciles: checks every image referenced in the metadata has a backup copy
-      and self-heals any gaps, takes a redundant metadata snapshot, writes a status report. No
-      public route (`workers_dev: false`) since it only needs its own schedule; verified by running
-      it against real production data via `wrangler dev --remote` (not just local emulation) before
+      and self-heals any gaps, takes a redundant metadata snapshot, writes a log entry. No public
+      route (`workers_dev: false`) since it only needs its own schedule; verified by running it
+      against real production data via `wrangler dev --remote` (not just local emulation) before
       and after deploying for real — correct output both times (`imagesChecked`, `imagesCopied`,
       `metadataSnapshotTaken`, `errors`).
-- [x] `/admin/backups` — shows the last reconciliation run's health (flagged **STALE** if it's been
-      notably longer than a day since the last run, which usually means the Cron Trigger itself
-      stopped rather than a run failing — a run that fails for another reason still writes a status
-      file with its errors listed) and the list of recent metadata snapshots (every one ever taken
-      is kept; the page shows the most recent 20 plus a total count). Linked from `/admin`.
+- [x] **Follow-up per explicit feedback**: a single overwritten `status.json` wasn't enough — "I
+      don't wanna have to go to the backups, I'm gonna forget it exists... here's the last 7-10
+      backup jobs that were run." Reworked into a proper log: every backup-relevant event (each
+      on-write backup from an edit, each daily reconciliation run) writes its own small,
+      never-overwritten entry under `backups/log/` (`BackupLogEntry` in `src/lib/backup.ts`,
+      `logBackupEvent()`/`getRecentBackupLog()`). `getRecentBackupLog()` paginates through the
+      *entire* key listing rather than just R2's first-1000-per-call, so "most recent N" stays
+      correct once the total count eventually exceeds that (a couple of years out, at this rate).
+      **`/admin` itself now shows the last 10 events inline** (not just a link to go check) — a new
+      shared `BackupLog.astro` component, also used by `/admin/backups` (last 50, plus the
+      reconciliation health line and the full metadata snapshot list). Verified locally and
+      end-to-end: an upload, an edit, and a delete each produced their own correctly-detailed log
+      entry, immediately visible on `/admin` without navigating anywhere.
+- [x] `/admin/backups` — still exists for the deeper view (per explicit request to keep it) —
+      reconciliation health (flagged **STALE** if it's been notably longer than a day since the
+      last reconciliation entry, which usually means the Cron Trigger stopped rather than a run
+      failing — a run that fails for another reason still logs an entry with its errors listed),
+      last 50 log entries, and the full metadata snapshot list (most recent 20 shown, total count
+      via `countBackupSnapshots()`). Linked from `/admin`.
 - [x] One real hiccup during setup: running `wrangler dev`/`deploy` from inside `backup-worker/`
       initially failed with a config conflict — it was picking up a stale deploy-redirect file left
       in the *root* project's `.wrangler/deploy/`, from the main site's Astro-adapter build

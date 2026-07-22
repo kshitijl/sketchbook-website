@@ -6,7 +6,7 @@ import { getPieces, updatePieces } from '../../lib/data';
 import { compareDatesDescending } from '../../lib/facets';
 import { purgeEverything } from '../../lib/purge';
 import { isAuthorizedAdminRequest } from '../../lib/adminGuard';
-import { backupPieceData } from '../../lib/backup';
+import { backupPieceData, logBackupEvent } from '../../lib/backup';
 
 Astro.response.headers.set('Cache-Control', 'no-store');
 
@@ -39,7 +39,22 @@ if (Astro.request.method === 'POST') {
 			piece.favoriteRank = idx === -1 ? null : idx + 1;
 		}
 	});
-	await backupPieceData(env.BACKUP_BUCKET, saved).catch(() => {});
+	let metadataSnapshotTaken = false;
+	const backupErrors: string[] = [];
+	try {
+		await backupPieceData(env.BACKUP_BUCKET, saved);
+		metadataSnapshotTaken = true;
+	} catch (err) {
+		backupErrors.push(`Failed to back up metadata: ${String(err)}`);
+	}
+	await logBackupEvent(env.BACKUP_BUCKET, {
+		kind: 'on-write',
+		ranAt: new Date().toISOString(),
+		action: 'Reordered favorites',
+		imagesBackedUp: 0,
+		metadataSnapshotTaken,
+		errors: backupErrors
+	}).catch(() => {});
 	await purgeEverything(env);
 
 	return Astro.redirect('/admin/favorites');

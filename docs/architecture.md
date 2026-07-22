@@ -207,13 +207,22 @@ propagate into destroying the backup copy too. Two independent mechanisms feed i
    day (`triggers.crons` in `backup-worker/wrangler.jsonc`) with its own bindings to both buckets:
    reads the current metadata, checks every referenced image has a backup copy and copies any that
    don't (self-healing anything the on-write path ever missed), takes a redundant metadata
-   snapshot, and writes a status report (`backups/status.json`) that `/admin/backups` reads and
-   displays — last-run time (flagged stale if it's been notably longer than a day, which usually
-   means the Cron Trigger itself stopped firing rather than a run failing), images checked/copied,
-   and any errors. Has no public route (`workers_dev: false`, no custom domain) since it only ever
-   needs to run on its own schedule; its `fetch` handler exists solely so the same check can be
-   manually re-run on demand (via `wrangler dev --remote` or the dashboard) for verification,
-   without waiting for the next scheduled tick.
+   snapshot, and writes a log entry (see below). Has no public route (`workers_dev: false`, no
+   custom domain) since it only ever needs to run on its own schedule; its `fetch` handler exists
+   solely so the same check can be manually re-run on demand (via `wrangler dev --remote` or the
+   dashboard) for verification, without waiting for the next scheduled tick.
+
+**Visibility — a log, not a single overwritten status**: the first pass wrote one `status.json`
+that only ever reflected the *last* run — insufficient per explicit feedback ("I don't wanna have
+to go to the backups, I'm gonna forget it exists... here's the last 7-10 backup jobs that were
+run"). Instead, every backup-relevant event — each on-write backup from an edit, each daily
+reconciliation run — writes its own small, individually-keyed, never-overwritten entry under
+`backups/log/` (`BackupLogEntry` in `src/lib/backup.ts`). Reading "the most recent N" paginates
+through the *entire* key listing rather than trusting R2's first-1000-objects-per-call, so it
+stays correct once the total count eventually exceeds that (years out, at the rate this is used).
+**`/admin` shows the last 10 of these directly, inline** — not a link to go check elsewhere, which
+was the whole point of the feedback. `/admin/backups` still exists as the deeper view (last 50,
+plus the full metadata snapshot list) since that was explicitly wanted kept too.
 
 **What this doesn't cover**: an off-Cloudflare copy (protecting against, say, the whole Cloudflare
 account being compromised or suspended, not just an app bug) — a strictly larger, different threat

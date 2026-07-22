@@ -11,7 +11,12 @@
  *     self-healing safety net for the on-write backup in the main app (src/lib/backup.ts), which
  *     already copies each image the instant it's uploaded; this catches anything that path missed.
  *  3. Takes a redundant timestamped metadata snapshot (belt-and-suspenders vs. the on-write one).
- *  4. Writes a status report the main site's /admin/backups page reads and displays.
+ *  4. Writes a log entry (same backups/log/ stream the main app's on-write backups write to, so
+ *     /admin shows one unified "last N backup events" list) that the main site's admin pages read.
+ *
+ * Kept deliberately self-contained (no shared import from the main app's src/lib/) since this is a
+ * separate deployable project — a little duplication here is simpler than coupling two independent
+ * deployments' build processes together.
  */
 
 interface Env {
@@ -30,13 +35,14 @@ interface PiecesData {
 }
 
 const PIECES_KEY = 'data/pieces.json';
-const STATUS_KEY = 'backups/status.json';
+const BACKUP_LOG_PREFIX = 'backups/log/';
 
 function timestampForKey(date: Date): string {
 	return date.toISOString().replace(/[:.]/g, '-');
 }
 
-interface BackupStatus {
+interface ReconciliationLogEntry {
+	kind: 'reconciliation';
 	ranAt: string;
 	imagesChecked: number;
 	imagesCopied: number;
@@ -44,7 +50,7 @@ interface BackupStatus {
 	errors: string[];
 }
 
-async function runBackupCheck(env: Env): Promise<BackupStatus> {
+async function runBackupCheck(env: Env): Promise<ReconciliationLogEntry> {
 	const ranAt = new Date().toISOString();
 	const errors: string[] = [];
 	let imagesChecked = 0;
@@ -96,11 +102,19 @@ async function runBackupCheck(env: Env): Promise<BackupStatus> {
 		}
 	}
 
-	const status: BackupStatus = { ranAt, imagesChecked, imagesCopied, metadataSnapshotTaken, errors };
-	await env.BACKUP_BUCKET.put(STATUS_KEY, JSON.stringify(status, null, 2), {
+	const entry: ReconciliationLogEntry = {
+		kind: 'reconciliation',
+		ranAt,
+		imagesChecked,
+		imagesCopied,
+		metadataSnapshotTaken,
+		errors
+	};
+	const logKey = `${BACKUP_LOG_PREFIX}${timestampForKey(new Date(ranAt))}-${crypto.randomUUID().slice(0, 8)}.json`;
+	await env.BACKUP_BUCKET.put(logKey, JSON.stringify(entry, null, 2), {
 		httpMetadata: { contentType: 'application/json' }
 	});
-	return status;
+	return entry;
 }
 
 export default {
@@ -112,8 +126,8 @@ export default {
 	// logic can be manually re-run/verified (via `wrangler dev --remote` or the dashboard) without
 	// waiting for the next scheduled tick, not as a general-purpose API.
 	async fetch(_request, env) {
-		const status = await runBackupCheck(env);
-		return new Response(JSON.stringify(status, null, 2), {
+		const entry = await runBackupCheck(env);
+		return new Response(JSON.stringify(entry, null, 2), {
 			headers: { 'Content-Type': 'application/json' }
 		});
 	}

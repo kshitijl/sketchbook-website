@@ -1,0 +1,50 @@
+---
+import type { BackupLogEntry } from '../lib/backup';
+
+interface Props {
+	entries: BackupLogEntry[];
+}
+const { entries } = Astro.props;
+---
+
+{entries.length === 0 ? (
+	<p><em>No backup activity recorded yet.</em></p>
+) : (
+	<ul style="list-style:none; padding:0;">
+		{entries.map((entry) => {
+			const hoursAgo = (Date.now() - new Date(entry.ranAt).getTime()) / (1000 * 60 * 60);
+			const hasErrors = entry.errors.length > 0;
+			return (
+				<li style="margin-bottom:0.5rem; padding:0.5rem; border:2px solid var(--border);">
+					<strong style={hasErrors ? 'color:var(--accent-3);' : undefined}>
+						{entry.kind === 'reconciliation' ? 'Daily check' : entry.action}
+					</strong>
+					{' '}
+					<span style="color:var(--text-muted); font-family:var(--mono); font-size:0.8rem;">
+						{entry.ranAt} ({Math.round(hoursAgo)}h ago)
+					</span>
+					<br />
+					{entry.kind === 'reconciliation' ? (
+						<span>
+							{entry.imagesChecked} image{entry.imagesChecked === 1 ? '' : 's'} checked,{' '}
+							{entry.imagesCopied} newly copied, metadata {entry.metadataSnapshotTaken ? 'saved' : 'FAILED'}
+						</span>
+					) : (
+						<span>
+							{entry.pieceTitle && <>&ldquo;{entry.pieceTitle}&rdquo; — </>}
+							{entry.imagesBackedUp} image{entry.imagesBackedUp === 1 ? '' : 's'} backed up, metadata{' '}
+							{entry.metadataSnapshotTaken ? 'saved' : 'FAILED'}
+						</span>
+					)}
+					{hasErrors && (
+						<ul style="color:var(--accent-3);">
+							{entry.errors.map((error) => (
+								<li>{error}</li>
+							))}
+						</ul>
+					)}
+				</li>
+			);
+		})}
+	</ul>
+)}
