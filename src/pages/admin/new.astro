@@ -8,7 +8,8 @@ import { getImageDimensions } from '../../lib/imageDimensions';
 import { purgeEverything } from '../../lib/purge';
 import { isAuthorizedAdminRequest } from '../../lib/adminGuard';
 import { backupAsset, backupPieceData, logBackupEvent } from '../../lib/backup';
-import type { Asset, Piece, Stage } from '../../lib/types';
+import { ASSET_KINDS } from '../../lib/assetKinds';
+import type { Asset, AssetKind, Piece, Stage } from '../../lib/types';
 
 Astro.response.headers.set('Cache-Control', 'no-store');
 
@@ -87,37 +88,50 @@ if (Astro.request.method === 'POST') {
 		const newId = generatePieceId(values.title, values.date, existingIds);
 
 		// Upload images under real, versioned keys before touching pieces.json — no placeholder
-		// values needed since the id is already known. "Additional photos" all land as `unsorted`
-		// — the point is uploading everything in one go without picking a kind per photo while
-		// still in the photos app; tagging each one happens afterward on the edit page.
+		// values needed since the id is already known.
 		const assets: Asset[] = [];
 		const existingAssetIds = new Set<string>();
 		let imagesBackedUp = 0;
 		const backupErrors: string[] = [];
-		for (const { kind, field } of [
-			{ kind: 'final' as const, field: 'asset_final' },
-			{ kind: 'unsorted' as const, field: 'asset_extra' }
-		]) {
-			for (const file of formData.getAll(field)) {
-				if (!(file instanceof File) || file.size === 0) continue;
-				const assetId = generateAssetId(existingAssetIds);
-				existingAssetIds.add(assetId);
-				const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
-				const r2Key = buildAssetKey(newId, assetId, ext);
-				const buffer = await file.arrayBuffer();
-				const dims = getImageDimensions(new Uint8Array(buffer));
-				const contentType = file.type || 'application/octet-stream';
-				await env.ART_BUCKET.put(r2Key, buffer, { httpMetadata: { contentType } });
-				// Best-effort: a backup failure must never break the actual upload it's shadowing,
-				// but it should still show up in the visible log rather than being fully silent.
-				try {
-					await backupAsset(env.BACKUP_BUCKET, r2Key, buffer, contentType);
-					imagesBackedUp++;
-				} catch (err) {
-					backupErrors.push(`Failed to back up ${r2Key}: ${String(err)}`);
-				}
-				assets.push({ id: assetId, kind, r2Key, width: dims?.width ?? 0, height: dims?.height ?? 0 });
+
+		async function uploadAsset(file: File, kind: AssetKind) {
+			const assetId = generateAssetId(existingAssetIds);
+			existingAssetIds.add(assetId);
+			const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
+			const r2Key = buildAssetKey(newId, assetId, ext);
+			const buffer = await file.arrayBuffer();
+			const dims = getImageDimensions(new Uint8Array(buffer));
+			const contentType = file.type || 'application/octet-stream';
+			await env.ART_BUCKET.put(r2Key, buffer, { httpMetadata: { contentType } });
+			// Best-effort: a backup failure must never break the actual upload it's shadowing,
+			// but it should still show up in the visible log rather than being fully silent.
+			try {
+				await backupAsset(env.BACKUP_BUCKET, r2Key, buffer, contentType);
+				imagesBackedUp++;
+			} catch (err) {
+				backupErrors.push(`Failed to back up ${r2Key}: ${String(err)}`);
 			}
+			assets.push({ id: assetId, kind, r2Key, width: dims?.width ?? 0, height: dims?.height ?? 0 });
+		}
+
+		if (finalFile instanceof File && finalFile.size > 0) {
+			await uploadAsset(finalFile, 'final');
+		}
+
+		// Each "additional photo" is tagged right at selection time — a `kind_extra_<i>` select
+		// added client-side (see pieceForm.ts) next to its preview, indexed to match the order
+		// files appear in the multi-file input — instead of always landing as `unsorted` and
+		// needing a second trip to the edit page just to tag it.
+		const extraFiles = formData.getAll('asset_extra');
+		for (let i = 0; i < extraFiles.length; i++) {
+			const file = extraFiles[i];
+			if (!(file instanceof File) || file.size === 0) continue;
+			const kindValue = formData.get(`kind_extra_${i}`);
+			const kind: AssetKind =
+				typeof kindValue === 'string' && (ASSET_KINDS as string[]).includes(kindValue)
+					? (kindValue as AssetKind)
+					: 'unsorted';
+			await uploadAsset(file, kind);
 		}
 
 		const piece: Piece = {
@@ -242,20 +256,12 @@ if (Astro.request.method === 'POST') {
 		<details>
 			<summary>Additional photos (optional) — reference, in-progress, value study, setup, whatever</summary>
 			<p>
-				<em>Select as many as you want here; tag each one (reference photo, in-progress, etc.) afterward on the edit page.</em>
+				<em>Select as many as you want, then tag each one right below.</em>
 			</p>
 			<p>
-				<input
-					type="file"
-					class="asset-preview-input"
-					data-preview-id="preview-extra"
-					name="asset_extra"
-					accept="image/*"
-					multiple
-				/>
-				<br />
-				<img id="preview-extra" alt="Preview" style="display:none; max-width:200px; max-height:200px;" />
+				<input type="file" id="extraAssetInput" name="asset_extra" accept="image/*" multiple />
 			</p>
+			<div id="extraAssetList"></div>
 		</details>
 
 		<p><button type="submit">Save</button></p>

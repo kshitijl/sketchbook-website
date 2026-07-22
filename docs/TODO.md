@@ -774,6 +774,33 @@ kind on a phone — annoying. Now it's upload everything in one generic batch, t
       query param and, only then, shows an `← Add another piece` link straight back to `/admin/new`
       above the title — since right after adding one piece, adding another is usually next. Nobody
       else ever links to a piece with `?added=1`, so this never shows up for other viewers.
+
+**Correction, same day**: "tag each one afterward on the edit page" was itself too many clicks —
+tagging needed to happen right there at upload time, same page, not on a second trip. Reworked
+before this ever shipped to real use:
+- [x] The "additional photos" multi-file input (`asset_extra`, both on `/admin/new` and
+      `/admin/edit/[id]`) now gets a `change` listener (`setupExtraAssetTagging` in
+      `src/scripts/pieceForm.ts`) that renders a thumbnail + kind `<select name="kind_extra_<i>">`
+      for every selected file, indexed to match file order — so you tag each photo the moment you
+      pick it, before ever hitting Save.
+- [x] Server-side, `asset_final` is now handled as its own single upload (kind `'final'`, unchanged),
+      and each `asset_extra` file's kind comes from its matching `kind_extra_<i>` field (falling back
+      to `unsorted` only if that field is missing/invalid) — replacing the old loop that always
+      stamped every `asset_extra` file as `unsorted`.
+      The edit page's separate `kind_<assetId>` re-kind selects (for assets from a *previous*
+      submission) are unrelated and unchanged — both mechanisms coexist.
+- [x] Client-side kind option list (`EXTRA_KIND_OPTIONS` in `pieceForm.ts`) is a small duplicate of
+      `ASSET_KIND_LABELS`, not an import — this script bundles standalone for the browser, and the
+      kind list is short and rarely changes, so piping it through the DOM wasn't worth the complexity.
+- [x] Hit a real Cloudflare Workers-types quirk while building this: `row.append(img, select)`
+      failed `astro check` with a nonsensical-looking overload error
+      (`content: string | ReadableStream | Response`) — `@cloudflare/workers-types` globally
+      declares its own `Element` (from the `HTMLRewriter` API) that collides with DOM's `Element`
+      and shadows `.append()`'s normal signature. Fixed by using two `.appendChild()` calls instead,
+      which isn't ambiguous.
+- [x] Verified locally via `astro dev`: submitted a new piece with two extra photos tagged
+      `reference-photo` and `setup` in the same request (no separate edit-page trip), confirmed both
+      landed with the right kind by re-fetching the edit page's rendered HTML.
 - [x] Verified end-to-end locally via `astro dev`: uploaded a piece with an unsorted extra photo,
       re-kinded it to `reference-photo` via the edit form, removed it, and deleted the test piece —
       each step confirmed by re-fetching the edit page's rendered HTML, not assumed from the response

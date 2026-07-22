@@ -46,6 +46,7 @@ export interface PieceFormOptions {
 export function setupPieceForm(options: PieceFormOptions = {}): void {
 	setupLocationPicker(options);
 	setupAssetPreviews();
+	setupExtraAssetTagging();
 	setupFilenameSuggestions();
 	setupTagChips();
 }
@@ -193,6 +194,56 @@ function setupAssetPreviews(): void {
 			}
 			preview.src = URL.createObjectURL(file);
 			preview.style.display = 'block';
+		});
+	});
+}
+
+// Mirrors ASSET_KIND_LABELS in src/lib/assetKinds.ts, minus `final` (that one has its own
+// dedicated slot, not a per-file selector). Duplicated rather than imported: this script bundles
+// standalone for the browser, and the kind list is small and rarely changes.
+const EXTRA_KIND_OPTIONS: Array<[string, string]> = [
+	['unsorted', 'Unsorted'],
+	['reference-photo', 'Reference photo'],
+	['in-progress', 'In-progress photo'],
+	['value-study', 'Value study scan'],
+	['setup', 'Setup / easel photo']
+];
+
+/** The "additional photos" input used to show one generic preview and always upload as
+ * `unsorted`, tagged for real only later on the edit page. Now each selected file gets its own
+ * thumbnail plus a kind selector immediately, right here — tagging happens once, at selection
+ * time, no second trip needed. Selects are named `kind_extra_<i>`, indexed to match the order
+ * files appear in the input's FileList, which is also the order the server sees them in via
+ * `formData.getAll('asset_extra')`. */
+function setupExtraAssetTagging(): void {
+	const input = document.getElementById('extraAssetInput') as HTMLInputElement | null;
+	const list = document.getElementById('extraAssetList');
+	if (!input || !list) return;
+
+	input.addEventListener('change', () => {
+		list.innerHTML = '';
+		const files = input.files ? Array.from(input.files) : [];
+		files.forEach((file, i) => {
+			const row = document.createElement('div');
+			row.style.cssText = 'display:flex; align-items:center; gap:0.75rem; margin:0.5rem 0;';
+
+			const img = document.createElement('img');
+			img.src = URL.createObjectURL(file);
+			img.alt = file.name;
+			img.style.cssText = 'max-width:100px; max-height:100px; display:block;';
+
+			const select = document.createElement('select');
+			select.name = `kind_extra_${i}`;
+			for (const [value, label] of EXTRA_KIND_OPTIONS) {
+				const option = document.createElement('option');
+				option.value = value;
+				option.textContent = label;
+				select.appendChild(option);
+			}
+
+			row.appendChild(img);
+			row.appendChild(select);
+			list.appendChild(row);
 		});
 	});
 }

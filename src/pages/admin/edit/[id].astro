@@ -151,32 +151,48 @@ if (piece && Astro.request.method === 'POST') {
 		let imagesBackedUp = 0;
 		const backupErrors: string[] = [];
 		const existingAssetIds = new Set(piece.assets.map((a) => a.id));
-		// "Additional photos" always land as `unsorted` — tagging them with a real kind happens
-		// afterward via the per-asset selector above, once they're visible in that list.
-		for (const { kind, field } of [
-			{ kind: 'final' as const, field: 'asset_final' },
-			{ kind: 'unsorted' as const, field: 'asset_extra' }
-		]) {
-			for (const file of formData.getAll(field)) {
-				if (!(file instanceof File) || file.size === 0) continue;
-				const assetId = generateAssetId(existingAssetIds);
-				existingAssetIds.add(assetId);
-				const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
-				const r2Key = buildAssetKey(piece.id, assetId, ext);
-				const buffer = await file.arrayBuffer();
-				const dims = getImageDimensions(new Uint8Array(buffer));
-				const contentType = file.type || 'application/octet-stream';
-				await env.ART_BUCKET.put(r2Key, buffer, { httpMetadata: { contentType } });
-				// Best-effort: a backup failure must never break the actual upload it's shadowing,
-				// but it should still show up in the visible log rather than being fully silent.
-				try {
-					await backupAsset(env.BACKUP_BUCKET, r2Key, buffer, contentType);
-					imagesBackedUp++;
-				} catch (err) {
-					backupErrors.push(`Failed to back up ${r2Key}: ${String(err)}`);
-				}
-				assetUpdates.push({ action: 'add', kind, assetId, r2Key, width: dims?.width ?? 0, height: dims?.height ?? 0 });
+		const pieceId = piece.id;
+
+		async function uploadAsset(file: File, kind: AssetKind) {
+			const assetId = generateAssetId(existingAssetIds);
+			existingAssetIds.add(assetId);
+			const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
+			const r2Key = buildAssetKey(pieceId, assetId, ext);
+			const buffer = await file.arrayBuffer();
+			const dims = getImageDimensions(new Uint8Array(buffer));
+			const contentType = file.type || 'application/octet-stream';
+			await env.ART_BUCKET.put(r2Key, buffer, { httpMetadata: { contentType } });
+			// Best-effort: a backup failure must never break the actual upload it's shadowing,
+			// but it should still show up in the visible log rather than being fully silent.
+			try {
+				await backupAsset(env.BACKUP_BUCKET, r2Key, buffer, contentType);
+				imagesBackedUp++;
+			} catch (err) {
+				backupErrors.push(`Failed to back up ${r2Key}: ${String(err)}`);
 			}
+			assetUpdates.push({ action: 'add', kind, assetId, r2Key, width: dims?.width ?? 0, height: dims?.height ?? 0 });
+		}
+
+		const finalFile = formData.get('asset_final');
+		if (finalFile instanceof File && finalFile.size > 0) {
+			await uploadAsset(finalFile, 'final');
+		}
+
+		// Each newly-added "additional photo" is tagged right at selection time — a
+		// `kind_extra_<i>` select added client-side (see pieceForm.ts) next to its preview,
+		// indexed to match the order files appear in the multi-file input — instead of always
+		// landing as `unsorted`. (The `kind_<assetId>` selects above are a separate mechanism, for
+		// re-tagging assets from a *previous* submission.)
+		const extraFiles = formData.getAll('asset_extra');
+		for (let i = 0; i < extraFiles.length; i++) {
+			const file = extraFiles[i];
+			if (!(file instanceof File) || file.size === 0) continue;
+			const kindValue = formData.get(`kind_extra_${i}`);
+			const kind: AssetKind =
+				typeof kindValue === 'string' && (ASSET_KINDS as string[]).includes(kindValue)
+					? (kindValue as AssetKind)
+					: 'unsorted';
+			await uploadAsset(file, kind);
 		}
 
 		const saved = await updatePieces(env.ART_BUCKET, (d) => {
@@ -359,18 +375,10 @@ if (piece && Astro.request.method === 'POST') {
 							</div>
 						))}
 					<label>
-						Add more photos (you can select more than one):
-						<input
-							type="file"
-							class="asset-preview-input"
-							data-preview-id="preview-extra"
-							name="asset_extra"
-							accept="image/*"
-							multiple
-						/>
+						Add more photos (you can select more than one), then tag each below:
+						<input type="file" id="extraAssetInput" name="asset_extra" accept="image/*" multiple />
 					</label>
-					<br />
-					<img id="preview-extra" alt="New preview" style="display:none; max-width:200px; max-height:200px; margin-top:0.5rem;" />
+					<div id="extraAssetList"></div>
 				</div>
 
 				<p><button type="submit">Save</button></p>
