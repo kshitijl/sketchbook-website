@@ -744,5 +744,40 @@ resizes images automagically... or is that not happening anywhere rn") — it wa
       already used for `ADMIN_EMAIL`/`DEPLOY_PURGE_TOKEN`) — `ImagesBinding` itself is already
       ambient from the Cloudflare Workers types, just needed adding to `Env`/`Cloudflare.Env`.
 
+## Admin upload flow: tag photos after uploading, not before (2026-07-22)
+Prompted directly: uploading "additional photos" used to mean picking a specific kind (reference /
+in-progress / value-study / setup) per upload field, which meant re-opening the Photos app once per
+kind on a phone — annoying. Now it's upload everything in one generic batch, tag each one afterward.
+- [x] `AssetKind` gained a new `unsorted` value (`src/lib/types.ts`) — the default kind for a
+      freshly-uploaded "additional photo" until it's tagged for real.
+- [x] `src/lib/assetKinds.ts` rewritten: the old `ASSET_KIND_FIELDS` array (one form-field name per
+      kind) is gone, replaced by `ASSET_KIND_LABELS` (a plain `Record<AssetKind, string>`) and
+      `ASSET_KINDS` (its keys). There are only ever two real upload fields now — `asset_final` and
+      one generic `asset_extra` — so a fields-to-kind mapping doesn't need to exist anymore.
+- [x] `/admin/new`: the "Other photos" `<details>` block collapsed from four labeled per-kind file
+      inputs down to one multi-file `asset_extra` input; every file in it lands as `kind: 'unsorted'`.
+- [x] `/admin/edit/[id]`: the final piece keeps its own dedicated single-slot section (replace/remove,
+      unchanged mechanism). Every other asset now renders in one flat list, each with a thumbnail, a
+      `<select name="kind_<assetId>">` (options from `ASSET_KIND_LABELS`, minus `final`), and its
+      existing remove checkbox — plus one `asset_extra` "add more" input at the bottom. Re-kinding is
+      a new third `AssetUpdate` variant (`{action:'kind', assetId, kind}`) applied after removals and
+      before additions in `updatePieces`.
+- [x] Both admin location-picker maps (`new.astro` and `edit/[id].astro`) grew from a fixed 280px tall
+      strip — "a thin horizontal rectangle, hard to work with" — to `height:60vh; min-height:420px`.
+- [x] Fixed the same Leaflet default-marker-icon-under-Vite bug (broken image box, cut-off "Mark"
+      text) in `src/scripts/pieceForm.ts` — it was fixed in `mapPage.ts` (the public map) earlier this
+      session but never applied to `pieceForm.ts`'s separate Leaflet setup, so the admin location
+      picker kept showing the broken icon. Same fix: `?url` imports for the marker PNGs plus
+      `L.Icon.Default.mergeOptions(...)`.
+- [x] "Add another piece" shortcut: `/admin/new`'s redirect on success now points at
+      `/piece/<id>?added=1` instead of a bare `/piece/<id>`. `/piece/[id].astro` checks for that exact
+      query param and, only then, shows an `← Add another piece` link straight back to `/admin/new`
+      above the title — since right after adding one piece, adding another is usually next. Nobody
+      else ever links to a piece with `?added=1`, so this never shows up for other viewers.
+- [x] Verified end-to-end locally via `astro dev`: uploaded a piece with an unsorted extra photo,
+      re-kinded it to `reference-photo` via the edit form, removed it, and deleted the test piece —
+      each step confirmed by re-fetching the edit page's rendered HTML, not assumed from the response
+      code alone.
+
 ## Phase 7 — Content migration
 Owner is doing this manually via `/admin/new`, not an agent task.

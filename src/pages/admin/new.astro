@@ -5,7 +5,6 @@ import { getPieces, updatePieces } from '../../lib/data';
 import { getTagFrequency } from '../../lib/facets';
 import { generateAssetId, generatePieceId, buildAssetKey } from '../../lib/ids';
 import { getImageDimensions } from '../../lib/imageDimensions';
-import { ASSET_KIND_FIELDS } from '../../lib/assetKinds';
 import { purgeEverything } from '../../lib/purge';
 import { isAuthorizedAdminRequest } from '../../lib/adminGuard';
 import { backupAsset, backupPieceData, logBackupEvent } from '../../lib/backup';
@@ -15,9 +14,6 @@ Astro.response.headers.set('Cache-Control', 'no-store');
 
 const { data: currentData } = await getPieces(env.ART_BUCKET);
 const tagFrequency = getTagFrequency(currentData);
-
-const finalField = ASSET_KIND_FIELDS.find((f) => f.kind === 'final')!;
-const otherAssetFields = ASSET_KIND_FIELDS.filter((f) => f.kind !== 'final');
 
 const todayISO = new Date().toISOString().slice(0, 10);
 
@@ -60,7 +56,7 @@ if (Astro.request.method === 'POST') {
 	if (values.lat === '' || Number.isNaN(lat)) errors.push('Location is required — click the map or use your current location.');
 	if (values.lng === '' || Number.isNaN(lng)) errors.push('Location is required — click the map or use your current location.');
 
-	const finalFile = formData.get(finalField.field);
+	const finalFile = formData.get('asset_final');
 	if (!(finalFile instanceof File) || finalFile.size === 0) {
 		errors.push('An image is required.');
 	}
@@ -68,7 +64,10 @@ if (Astro.request.method === 'POST') {
 	// The <input accept="image/*"> is only a client-side hint, not a real restriction — check
 	// every provided file server-side too, so a wrong file type fails clearly instead of silently
 	// uploading something an <img> tag can't display.
-	for (const { field, label } of ASSET_KIND_FIELDS) {
+	for (const { field, label } of [
+		{ field: 'asset_final', label: 'Final piece' },
+		{ field: 'asset_extra', label: 'Additional photos' }
+	]) {
 		for (const file of formData.getAll(field)) {
 			if (file instanceof File && file.size > 0 && !file.type.startsWith('image/')) {
 				errors.push(`${label}: "${file.name}" doesn't look like an image (${file.type || 'unknown type'}).`);
@@ -88,12 +87,17 @@ if (Astro.request.method === 'POST') {
 		const newId = generatePieceId(values.title, values.date, existingIds);
 
 		// Upload images under real, versioned keys before touching pieces.json — no placeholder
-		// values needed since the id is already known.
+		// values needed since the id is already known. "Additional photos" all land as `unsorted`
+		// — the point is uploading everything in one go without picking a kind per photo while
+		// still in the photos app; tagging each one happens afterward on the edit page.
 		const assets: Asset[] = [];
 		const existingAssetIds = new Set<string>();
 		let imagesBackedUp = 0;
 		const backupErrors: string[] = [];
-		for (const { kind, field } of ASSET_KIND_FIELDS) {
+		for (const { kind, field } of [
+			{ kind: 'final' as const, field: 'asset_final' },
+			{ kind: 'unsorted' as const, field: 'asset_extra' }
+		]) {
 			for (const file of formData.getAll(field)) {
 				if (!(file instanceof File) || file.size === 0) continue;
 				const assetId = generateAssetId(existingAssetIds);
@@ -149,7 +153,10 @@ if (Astro.request.method === 'POST') {
 		}).catch(() => {});
 		await purgeEverything();
 
-		return Astro.redirect(`/piece/${newId}`);
+		// `?added=1` only ever shows up on this specific redirect — it's how the piece page knows to
+		// show the "Add another piece" shortcut, since right after adding one you're often adding
+		// another and don't want to re-navigate to /admin every time.
+		return Astro.redirect(`/piece/${newId}?added=1`);
 	}
 }
 ---
@@ -174,7 +181,7 @@ if (Astro.request.method === 'POST') {
 					id="finalImageInput"
 					class="asset-preview-input"
 					data-preview-id="finalImagePreview"
-					name={finalField.field}
+					name="asset_final"
 					accept="image/*"
 					required
 				/>
@@ -209,7 +216,7 @@ if (Astro.request.method === 'POST') {
 			<button type="button" id="useCurrentLocationBtn">Use my current location</button>
 			<span id="locationReadout">No location selected yet — click the map, search, or use the button above.</span>
 			<span id="locationSearchStatus" style="display:block; color:var(--text-muted); font-size:0.85rem;"></span>
-			<div id="locationMap" style="height:280px; margin-top:0.5rem;"></div>
+			<div id="locationMap" style="height:60vh; min-height:420px; margin-top:0.5rem;"></div>
 		</p>
 		<p>
 			<label>Place name<br /><input type="text" id="placeNameInput" name="placeName" value={values.placeName} required placeholder="e.g. Jaipur, India" /></label>
@@ -233,24 +240,22 @@ if (Astro.request.method === 'POST') {
 		</p>
 
 		<details>
-			<summary>Other photos (optional): reference, in-progress, value study, setup</summary>
-			{otherAssetFields.map(({ field, label }) => (
-				<p>
-					<label>
-						{label} (you can select more than one)<br />
-						<input
-							type="file"
-							class="asset-preview-input"
-							data-preview-id={`preview-${field}`}
-							name={field}
-							accept="image/*"
-							multiple
-						/>
-					</label>
-					<br />
-					<img id={`preview-${field}`} alt="Preview" style="display:none; max-width:200px; max-height:200px;" />
-				</p>
-			))}
+			<summary>Additional photos (optional) — reference, in-progress, value study, setup, whatever</summary>
+			<p>
+				<em>Select as many as you want here; tag each one (reference photo, in-progress, etc.) afterward on the edit page.</em>
+			</p>
+			<p>
+				<input
+					type="file"
+					class="asset-preview-input"
+					data-preview-id="preview-extra"
+					name="asset_extra"
+					accept="image/*"
+					multiple
+				/>
+				<br />
+				<img id="preview-extra" alt="Preview" style="display:none; max-width:200px; max-height:200px;" />
+			</p>
 		</details>
 
 		<p><button type="submit">Save</button></p>

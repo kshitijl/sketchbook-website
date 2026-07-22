@@ -2,6 +2,7 @@ export type Stage = 'finished' | 'study';
 
 export type AssetKind =
 	| 'final'
+	| 'unsorted'
 	| 'reference-photo'
 	| 'in-progress'
 	| 'value-study'

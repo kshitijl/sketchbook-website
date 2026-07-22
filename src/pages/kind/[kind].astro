@@ -4,19 +4,15 @@ import Base from '../../layouts/Base.astro';
 import { getPieces } from '../../lib/data';
 import { getAssetsByKind } from '../../lib/facets';
 import { imageUrl } from '../../lib/images';
-import { ASSET_KIND_FIELDS } from '../../lib/assetKinds';
+import { ASSET_KINDS } from '../../lib/assetKinds';
 import { PAGE_CACHE_CONTROL } from '../../lib/cache';
 import type { AssetKind } from '../../lib/types';
-
-// Derived from the same source as the admin form's asset fields, so a new kind added there is
-// automatically valid here too — nothing to keep in sync by hand.
-const VALID_KINDS: AssetKind[] = ASSET_KIND_FIELDS.map((f) => f.kind);
 
 Astro.response.headers.set('Cache-Control', PAGE_CACHE_CONTROL);
 
 const { kind } = Astro.params;
 const isValidKind = (k: string | undefined): k is AssetKind =>
-	!!k && (VALID_KINDS as string[]).includes(k);
+	!!k && (ASSET_KINDS as string[]).includes(k);
 
 if (!isValidKind(kind)) {
 	Astro.response.status = 404;

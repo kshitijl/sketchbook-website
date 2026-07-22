@@ -5,12 +5,16 @@ import { getPieces, updatePieces } from '../../../lib/data';
 import { getPieceById, getTagFrequency } from '../../../lib/facets';
 import { generateAssetId, buildAssetKey } from '../../../lib/ids';
 import { getImageDimensions } from '../../../lib/imageDimensions';
-import { ASSET_KIND_FIELDS } from '../../../lib/assetKinds';
+import { ASSET_KIND_LABELS, ASSET_KINDS } from '../../../lib/assetKinds';
 import { imageUrl } from '../../../lib/images';
 import { purgeEverything } from '../../../lib/purge';
 import { isAuthorizedAdminRequest } from '../../../lib/adminGuard';
 import { backupAsset, backupPieceData, logBackupEvent } from '../../../lib/backup';
 import type { AssetKind, Stage } from '../../../lib/types';
+
+// Every kind except `final` — that one has its own dedicated single-slot section below, not a
+// per-asset kind selector, since a piece always has at most one and it's not just another tag.
+const OTHER_KINDS = ASSET_KINDS.filter((k) => k !== 'final');
 
 Astro.response.headers.set('Cache-Control', 'no-store');
 
@@ -106,7 +110,10 @@ if (piece && Astro.request.method === 'POST') {
 	// The <input accept="image/*"> is only a client-side hint, not a real restriction — check
 	// every provided file server-side too, so a wrong file type fails clearly instead of silently
 	// uploading something an <img> tag can't display.
-	for (const { field, label } of ASSET_KIND_FIELDS) {
+	for (const { field, label } of [
+		{ field: 'asset_final', label: 'Final piece' },
+		{ field: 'asset_extra', label: 'Additional photos' }
+	]) {
 		for (const file of formData.getAll(field)) {
 			if (file instanceof File && file.size > 0 && !file.type.startsWith('image/')) {
 				errors.push(`${label}: "${file.name}" doesn't look like an image (${file.type || 'unknown type'}).`);
@@ -120,26 +127,36 @@ if (piece && Astro.request.method === 'POST') {
 			.map((t) => t.trim().toLowerCase())
 			.filter(Boolean);
 
-		// Assets are a bag of images tagged by kind, not one slot per kind — a piece can have several
-		// reference photos, setup shots, etc. Removal and addition are independent per-asset actions
-		// (checking "remove" on an existing image and adding a new one of the same kind is how a
-		// single image gets "replaced") rather than a kind-level replace, since a kind can already
-		// have more than one existing asset.
+		// Assets are a bag of images tagged by kind, not one slot per kind — a piece can have
+		// several reference photos, setup shots, etc. Three independent kinds of change, applied
+		// in order below: remove, re-kind (tagging an `unsorted` upload after the fact), add.
 		type AssetUpdate =
 			| { action: 'remove'; assetId: string }
+			| { action: 'kind'; assetId: string; kind: AssetKind }
 			| { action: 'add'; kind: AssetKind; assetId: string; r2Key: string; width: number; height: number };
 		const assetUpdates: AssetUpdate[] = [];
 
 		for (const asset of piece.assets) {
 			if (formData.get(`remove_asset_${asset.id}`) === 'on') {
 				assetUpdates.push({ action: 'remove', assetId: asset.id });
+				continue;
+			}
+			if (asset.kind === 'final') continue;
+			const newKind = formData.get(`kind_${asset.id}`);
+			if (typeof newKind === 'string' && newKind !== asset.kind && (ASSET_KINDS as string[]).includes(newKind)) {
+				assetUpdates.push({ action: 'kind', assetId: asset.id, kind: newKind as AssetKind });
 			}
 		}
 
 		let imagesBackedUp = 0;
 		const backupErrors: string[] = [];
 		const existingAssetIds = new Set(piece.assets.map((a) => a.id));
-		for (const { kind, field } of ASSET_KIND_FIELDS) {
+		// "Additional photos" always land as `unsorted` — tagging them with a real kind happens
+		// afterward via the per-asset selector above, once they're visible in that list.
+		for (const { kind, field } of [
+			{ kind: 'final' as const, field: 'asset_final' },
+			{ kind: 'unsorted' as const, field: 'asset_extra' }
+		]) {
 			for (const file of formData.getAll(field)) {
 				if (!(file instanceof File) || file.size === 0) continue;
 				const assetId = generateAssetId(existingAssetIds);
@@ -174,6 +191,15 @@ if (piece && Astro.request.method === 'POST') {
 
 			const removeIds = new Set(assetUpdates.filter((u) => u.action === 'remove').map((u) => u.assetId));
 			p.assets = p.assets.filter((a) => !removeIds.has(a.id));
+
+			const kindChanges = new Map(
+				assetUpdates.filter((u) => u.action === 'kind').map((u) => [u.assetId, u.kind])
+			);
+			for (const asset of p.assets) {
+				const newKind = kindChanges.get(asset.id);
+				if (newKind) asset.kind = newKind;
+			}
+
 			for (const update of assetUpdates) {
 				if (update.action === 'add') {
 					p.assets.push({
@@ -250,7 +276,7 @@ if (piece && Astro.request.method === 'POST') {
 					<button type="button" id="useCurrentLocationBtn">Use my current location</button>
 					<span id="locationReadout">Selected: {values.lat}, {values.lng}</span>
 					<span id="locationSearchStatus" style="display:block; color:var(--text-muted); font-size:0.85rem;"></span>
-					<div id="locationMap" style="height:280px; margin-top:0.5rem;"></div>
+					<div id="locationMap" style="height:60vh; min-height:420px; margin-top:0.5rem;"></div>
 				</p>
 				<p>
 					<label>Place name<br /><input type="text" id="placeNameInput" name="placeName" value={values.placeName} required /></label>
@@ -274,38 +300,78 @@ if (piece && Astro.request.method === 'POST') {
 				</p>
 
 				<h2>Photos</h2>
-				{ASSET_KIND_FIELDS.map(({ kind, field, label }) => {
-					const existingForKind = piece.assets.filter((a) => a.kind === kind);
-					return (
-						<div style="margin-bottom:1rem; padding:0.5rem; border:1px solid #ccc;">
-							<strong>{label}</strong><br />
-							{existingForKind.map((asset) => (
-								<div style="margin:0.5rem 0;">
-									<img
-										src={imageUrl(asset.r2Key, 'thumb')}
-										alt={label}
-										style="max-width:200px; max-height:200px; display:block;"
+
+				<div style="margin-bottom:1rem; padding:0.5rem; border:1px solid #ccc;">
+					<strong>{ASSET_KIND_LABELS.final}</strong><br />
+					{(() => {
+						const finalAsset = piece.assets.find((a) => a.kind === 'final');
+						return (
+							<>
+								{finalAsset && (
+									<div style="margin:0.5rem 0;">
+										<img
+											src={imageUrl(finalAsset.r2Key, 'thumb')}
+											alt={ASSET_KIND_LABELS.final}
+											style="max-width:200px; max-height:200px; display:block;"
+										/>
+										<label><input type="checkbox" name={`remove_asset_${finalAsset.id}`} /> Remove this image</label>
+									</div>
+								)}
+								<label>
+									{finalAsset ? 'Replace with' : 'Add'} image:
+									<input
+										type="file"
+										id="finalImageInput"
+										class="asset-preview-input"
+										data-preview-id="preview-final"
+										name="asset_final"
+										accept="image/*"
 									/>
-									<label><input type="checkbox" name={`remove_asset_${asset.id}`} /> Remove this image</label>
-								</div>
-							))}
-							<label>
-								Add {label.toLowerCase()}{kind !== 'final' && ' (you can select more than one)'}:
-								<input
-									type="file"
-									id={kind === 'final' ? 'finalImageInput' : undefined}
-									class="asset-preview-input"
-									data-preview-id={`preview-${field}`}
-									name={field}
-									accept="image/*"
-									multiple={kind !== 'final'}
+								</label>
+								<br />
+								<img id="preview-final" alt="New preview" style="display:none; max-width:200px; max-height:200px; margin-top:0.5rem;" />
+							</>
+						);
+					})()}
+				</div>
+
+				<div style="margin-bottom:1rem; padding:0.5rem; border:1px solid #ccc;">
+					<strong>Other photos</strong><br />
+					<p><em>Tag each one below — reference photo, in-progress, value study, setup, whatever it is.</em></p>
+					{piece.assets
+						.filter((a) => a.kind !== 'final')
+						.map((asset) => (
+							<div style="margin:0.75rem 0; display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
+								<img
+									src={imageUrl(asset.r2Key, 'thumb')}
+									alt={ASSET_KIND_LABELS[asset.kind]}
+									style="max-width:120px; max-height:120px; display:block;"
 								/>
-							</label>
-							<br />
-							<img id={`preview-${field}`} alt="New preview" style="display:none; max-width:200px; max-height:200px; margin-top:0.5rem;" />
-						</div>
-					);
-				})}
+								<label>
+									Kind:
+									<select name={`kind_${asset.id}`}>
+										{OTHER_KINDS.map((k) => (
+											<option value={k} selected={asset.kind === k}>{ASSET_KIND_LABELS[k]}</option>
+										))}
+									</select>
+								</label>
+								<label><input type="checkbox" name={`remove_asset_${asset.id}`} /> Remove</label>
+							</div>
+						))}
+					<label>
+						Add more photos (you can select more than one):
+						<input
+							type="file"
+							class="asset-preview-input"
+							data-preview-id="preview-extra"
+							name="asset_extra"
+							accept="image/*"
+							multiple
+						/>
+					</label>
+					<br />
+					<img id="preview-extra" alt="New preview" style="display:none; max-width:200px; max-height:200px; margin-top:0.5rem;" />
+				</div>
 
 				<p><button type="submit">Save</button></p>
 			</form>

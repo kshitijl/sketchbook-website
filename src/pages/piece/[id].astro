@@ -18,6 +18,11 @@ if (!piece) {
 
 const orderedAssets = piece ? orderAssetsFinalFirst(piece.assets) : [];
 
+// Only ever true right after /admin/new's own redirect — a shortcut for "add another piece", since
+// that's usually exactly what happens next after adding one. Never shown to other viewers, since
+// nothing else ever links here with this param.
+const justAdded = Astro.url.searchParams.get('added') === '1';
+
 // Open Graph needs an absolute image URL — derived from the current request's own origin so it's
 // correct whether this is served from workers.dev or the eventual custom domain.
 const primaryAsset = piece ? getPrimaryAsset(piece) : undefined;
@@ -30,6 +35,7 @@ const ogDescription = piece
 <Base title={piece ? piece.title : 'Not found'} description={ogDescription} image={ogImage}>
 	{piece ? (
 		<article>
+			{justAdded && <p><a href="/admin/new"><strong>&larr; Add another piece</strong></a></p>}
 			<h1>{piece.title}</h1>
 			<p>
 				{piece.date} · {piece.stage} · {piece.location.placeName}
