@@ -222,11 +222,27 @@ migration itself needed exactly one full purge to flush cache entries from befor
 **A quirk worth knowing**: a client fetching an already-cached page does not see the `Cache-Tag`
 header back in the response — Cloudflare consumes it internally for purge-matching without
 necessarily echoing it out on a served `HIT`. This looked like the tagging wasn't working at first;
-confirmed it actually was by checking the effect instead of the header — purging by tag changed the
-home page's debug render-id (see below), while a `card`-size image's `CF-Cache-Status` stayed `HIT`
-straight through that same purge. Images are otherwise unaffected by any of this regardless of
-purge mechanism — they stay long-cached/immutable, since they're already invalidation-free by
-virtue of versioned keys.
+confirmed it actually was by checking the effect instead of the header — purging by tag reliably
+changed the home page's debug render-id (see below).
+
+**How confident is "images are untouched," precisely.** The *structural* guarantee is airtight and
+doesn't depend on live testing at all: `/img/*` responses never carry `Cache-Tag`, and a tag-scoped
+`cache.purge()` call can only match entries that carry the tag being purged — it is mechanically
+unable to touch something it was never told to tag. Live re-testing this in production (pressed
+directly on "have you actually tested this") was messier than a first pass suggested: baselining a
+`card`-size image at a stable `HIT` (age ~52 min, clearly pre-existing), firing a tag purge, then
+immediately re-checking that same image came back a single `MISS` — the opposite of expected.
+Rather than explain that away, it was investigated: 5 rapid rechecks afterward were all `HIT`
+again, and the `age` on that `HIT` was 47 seconds — *older* than the whole purge-to-recheck test
+window, meaning it couldn't have been a freshly-regenerated copy from that purge. Conclusion: the
+single `MISS` reads as ordinary per-edge-colo cache routing variance (Cloudflare's cache is spread
+across many PoPs; one request landing on a colo not yet synced with the shared upper tier is normal
+and unrelated to purging), not evidence the tag purge reached an untagged image. A fully airtight
+byte-level check (comparing `ETag` before/after) wasn't possible to run: `src/pages/img/[...key].ts`'s
+resize path never sets an `ETag` at all — only the untransformed-original/fallback path
+(`passthrough()`) does. Worth adding if tighter verification is ever wanted; not done as part of
+this change. Bottom line: verified with high confidence via the structural guarantee, not "zero
+ambiguity ever observed live."
 
 **Things that silently bypass Workers Cache** (worth knowing if a page mysteriously stops caching):
 only `GET`/`HEAD` requests are cached; a `Set-Cookie` response header forces `BYPASS`; requests

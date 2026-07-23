@@ -991,16 +991,46 @@ alongside `purgeEverything`, so no second Worker/deploy pipeline/routing config 
       every page route consistently uses the shared `setPageCacheHeaders()` helper.
 - [x] Verified live against production, not just locally: confirmed `/img/...` responses never
       carry `Cache-Tag` (so `purgePages()` structurally cannot match them) via `astro dev`; then in
-      production, purged by tag and confirmed the home page's render-id changed (the purge worked)
-      while a `card`-size image's `CF-Cache-Status` stayed `HIT` across that exact same purge (the
-      image cache was untouched) — the direct before/after evidence the split behaves correctly,
-      not just that the code looks right.
+      production, purged by tag and confirmed the home page's render-id changed (the purge worked).
 - [x] **Note on `Cache-Tag` visibility**: the header is set on every page response by our own code,
       but a client fetching an already-cached (`HIT`) page does not see a `Cache-Tag` header back —
       Cloudflare consumes it internally for purge-matching without necessarily echoing it out on
       every served hit. This looked like a bug at first (real live debugging moment) until the
       render-id test above confirmed the underlying purge-by-tag mechanism works regardless of
       whether the header is visible to the client.
+
+## Follow-up: pressed on "have you actually tested this", found a real limitation (2026-07-23)
+Directly challenged to confirm the image side of the split, not just assert it. Re-ran the
+before/after test more rigorously and found the first pass had been less airtight than it read:
+- [x] A clean before/after: baselined a `card`-size image at a stable `HIT` (age ~52 min, so
+      definitely pre-existing, not something the test itself had just created), fired a tag-based
+      purge (no `--full`), then checked the *same* image again.
+- [ ] **That immediate re-check came back `MISS`** — the opposite of the expected result. Didn't
+      stop there or explain it away: 5 rapid rechecks afterward all came back `HIT` again, and
+      critically the `age` on that `HIT` was 47 seconds — *older* than the entire purge-to-recheck
+      test window (~15-20s). If the purge had actually evicted this image, that `HIT` would have to
+      be a freshly-regenerated copy (age near 0), not one already 47 seconds old. Conclusion: the
+      single `MISS` is far more consistent with ordinary per-edge-colo cache routing variance
+      (Cloudflare's cache is distributed across many PoPs; a given request isn't guaranteed to land
+      on one already synced with the shared upper tier) than with the tag purge reaching an
+      untagged image. Reported this plainly, including the confusing middle step, rather than
+      quietly re-running until it looked clean and only reporting the good result.
+- [ ] **A real gap surfaced while trying to close this out completely**: wanted to compare `ETag`
+      before/after for a fully unambiguous byte-level check, but `src/pages/img/[...key].ts`'s
+      resize path (`transformed.response()`) never sets an `ETag` at all — only the untransformed-
+      original/fallback path (`passthrough()`, via `object.httpEtag`) does. This means a fully
+      airtight live verification of "this exact cached image object was untouched" isn't currently
+      possible for resized images — only the structural guarantee (images never carry `Cache-Tag`,
+      so a tag-scoped purge mechanically cannot match them) can be asserted with full confidence.
+      Not fixed yet — worth adding an `ETag` to the transform path if tighter verification is wanted
+      later, but that's a separate, small, not-yet-requested change.
+- [x] Confirmed the actual purge scope for both triggers, directly from the code (not just
+      described from memory): every admin write (new/edit/delete/favorites/bulk-tag) and a normal
+      `npm run deploy` both call `purgePages()` — the exact same purge, scoped to every page
+      carrying `Cache-Tag: page` (home, every `/piece/<id>`, every `/tag/<slug>`, every
+      `/kind/<kind>`, 404). Neither ever purges `/admin/*` (never cached) or `/img/*` (never
+      tagged). The only way to get the old full-everything behavior is the explicit `--full`/
+      `?full=1` escape hatch, which is not part of either normal path.
 
 ## Phase 7 — Content migration
 Owner is doing this manually via `/admin/new`, not an agent task.
