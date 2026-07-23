@@ -223,10 +223,6 @@ if (Astro.request.method === 'POST') {
 					required
 				/>
 			</label>
-			<!-- Populated client-side (pieceForm.ts) with the pre-generated WebP variants. -->
-			<input type="file" class="final-variant" data-size="thumb" name="asset_final_thumb" hidden />
-			<input type="file" class="final-variant" data-size="card" name="asset_final_card" hidden />
-			<input type="file" class="final-variant" data-size="big" name="asset_final_big" hidden />
 		</p>
 		<p>
 			<img id="finalImagePreview" alt="Preview" style="display:none; max-width:320px; max-height:320px;" />
@@ -292,6 +288,8 @@ if (Astro.request.method === 'POST') {
 		</details>
 
 		<p><button type="submit">Save</button></p>
+		<!-- Per-step progress + error messages during save, written by pieceForm.ts. -->
+		<div id="saveStatus" role="status" aria-live="polite" style="font-family:var(--mono); font-size:0.8rem; line-height:1.6;"></div>
 	</form>
 </Base>
 

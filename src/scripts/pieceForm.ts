@@ -56,7 +56,7 @@ export function setupPieceForm(options: PieceFormOptions = {}): void {
 	setupAssetPreviews();
 	setupExtraAssetTagging();
 	setupFilenameSuggestions();
-	setupFinalVariants();
+	setupSubmitWithProgress();
 	setupTagChips();
 }
 
@@ -94,51 +94,79 @@ async function makeVariants(file: File): Promise<Record<VariantSize, File> | nul
 	}
 }
 
-/** Load a generated File into a hidden <input type="file"> (empty if null) so a normal multipart
- * form submit carries it — no switch to a fetch-based submit needed. */
-function setFileInput(input: HTMLInputElement, file: File | null): void {
-	const dt = new DataTransfer();
-	if (file) dt.items.add(file);
-	input.files = dt.files;
-}
-
-// Disable Save while any variant generation is in flight (final image or extras), so you can't
-// submit before the WebP variants are ready — which would fail server validation. Ref-counted so
-// several concurrent jobs (e.g. multiple extra photos) all have to finish first.
-let pendingVariantJobs = 0;
-async function withVariantJob(fn: () => Promise<void>): Promise<void> {
-	pendingVariantJobs++; // runs synchronously before the first await — Save disables immediately
-	updateSubmitDisabled();
-	try {
-		await fn();
-	} finally {
-		pendingVariantJobs--;
-		updateSubmitDisabled();
-	}
-}
-function updateSubmitDisabled(): void {
-	const btn = document.querySelector<HTMLButtonElement>('form button[type="submit"]');
-	if (btn) btn.disabled = pendingVariantJobs > 0;
-}
-
-/** On selecting the main image, generate its three variants into the hidden `asset_final_<size>`
- * inputs. */
-function setupFinalVariants(): void {
+/**
+ * Intercepts the piece form's submit to (1) show per-step feedback — resizing each image, then
+ * uploading — and (2) surface every failure as a visible message instead of dumping to a blank
+ * error page. Generates the WebP variants at submit time and posts everything (fields, master files,
+ * and the generated variants) via fetch. Shared by the new-piece and edit-piece forms; the separate
+ * delete-piece form isn't touched (this only binds the form containing the image inputs).
+ */
+function setupSubmitWithProgress(): void {
 	const finalInput = document.getElementById('finalImageInput') as HTMLInputElement | null;
-	if (!finalInput) return;
-	const form = finalInput.closest('form');
-	const variantInputs = form ? [...form.querySelectorAll<HTMLInputElement>('input.final-variant')] : [];
-	if (variantInputs.length === 0) return;
-	finalInput.addEventListener('change', () =>
-		withVariantJob(async () => {
-			const file = finalInput.files?.[0];
-			const variants = file ? await makeVariants(file) : null;
-			for (const input of variantInputs) {
-				const size = input.dataset.size as VariantSize;
-				setFileInput(input, variants ? variants[size] : null);
+	const form = finalInput?.closest('form');
+	if (!finalInput || !form) return;
+	const extraInput = document.getElementById('extraAssetInput') as HTMLInputElement | null;
+	const submitBtn = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+	const status = document.getElementById('saveStatus');
+
+	function log(msg: string, kind: 'info' | 'ok' | 'error' = 'info'): void {
+		if (!status) return;
+		const line = document.createElement('div');
+		line.textContent = (kind === 'ok' ? '✓ ' : kind === 'error' ? '⚠ ' : '') + msg;
+		if (kind === 'error') line.style.color = 'var(--accent-3)';
+		status.appendChild(line);
+	}
+
+	form.addEventListener('submit', async (event) => {
+		event.preventDefault();
+		if (status) status.innerHTML = '';
+		if (submitBtn) submitBtn.disabled = true;
+		try {
+			const data = new FormData(form); // all text fields, kind selects, and the master file inputs
+
+			const finalFile = finalInput.files?.[0];
+			if (finalFile) {
+				log('Resizing main image…');
+				const variants = await makeVariants(finalFile);
+				if (!variants) throw new Error(`Couldn't resize the main image "${finalFile.name}" — try a JPEG or PNG.`);
+				for (const size of VARIANT_SIZES) data.set(`asset_final_${size}`, variants[size]);
+				log('Main image resized.', 'ok');
 			}
-		})
-	);
+
+			const extras = extraInput?.files ? [...extraInput.files] : [];
+			for (let i = 0; i < extras.length; i++) {
+				log(`Resizing additional photo ${i + 1} of ${extras.length}…`);
+				const variants = await makeVariants(extras[i]);
+				if (!variants) throw new Error(`Couldn't resize additional photo ${i + 1} ("${extras[i].name}").`);
+				for (const size of VARIANT_SIZES) data.set(`asset_extra_${size}_${i}`, variants[size]);
+				log(`Additional photo ${i + 1} resized.`, 'ok');
+			}
+
+			log('Uploading…');
+			const res = await fetch(form.action, { method: 'POST', body: data });
+			if (res.redirected) {
+				window.location.assign(res.url); // success -> /piece/<id>?added=1
+				return;
+			}
+			if (res.ok) {
+				// The server re-rendered the form with validation errors (its <ul> of messages) — show them.
+				const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+				const errors = [...doc.querySelectorAll('ul[style*="accent-3"] li')]
+					.map((li) => li.textContent?.trim())
+					.filter(Boolean) as string[];
+				(errors.length ? errors : ['The submission was rejected, but no error detail came back.']).forEach((msg) =>
+					log(msg, 'error')
+				);
+			} else {
+				const body = (await res.text()).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
+				log(`Upload failed — HTTP ${res.status}. ${body}`, 'error');
+			}
+		} catch (err) {
+			log(`Something went wrong: ${(err as Error)?.message ?? String(err)}`, 'error');
+		} finally {
+			if (submitBtn) submitBtn.disabled = false;
+		}
+	});
 }
 
 function setupLocationPicker(options: PieceFormOptions): void {
@@ -337,23 +365,8 @@ function setupExtraAssetTagging(): void {
 				select.appendChild(option);
 			}
 
-			// Three hidden variant inputs for this file, index-aligned to its slot, filled once the
-			// browser finishes generating the WebP variants (Save stays disabled until then).
-			const variantInputs = VARIANT_SIZES.map((size) => {
-				const inp = document.createElement('input');
-				inp.type = 'file';
-				inp.name = `asset_extra_${size}_${i}`;
-				inp.style.display = 'none';
-				return inp;
-			});
-			withVariantJob(async () => {
-				const variants = await makeVariants(file);
-				variantInputs.forEach((inp, si) => setFileInput(inp, variants ? variants[VARIANT_SIZES[si]] : null));
-			});
-
 			row.appendChild(img);
 			row.appendChild(select);
-			for (const inp of variantInputs) row.appendChild(inp);
 			list.appendChild(row);
 		});
 	});

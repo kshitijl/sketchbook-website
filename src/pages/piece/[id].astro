@@ -3,7 +3,7 @@ import { env } from 'cloudflare:workers';
 import Base from '../../layouts/Base.astro';
 import { getPieces } from '../../lib/data';
 import { getPieceById, getPrimaryAsset, orderAssetsFinalFirst } from '../../lib/facets';
-import { imageUrl, originalImageUrl } from '../../lib/images';
+import { imageUrl, originalImageUrl, SIZE_WIDTHS } from '../../lib/images';
 import { setPageCacheHeaders } from '../../lib/cache';
 
 setPageCacheHeaders(Astro.response.headers);
@@ -67,14 +67,14 @@ const ogDescription = piece
 					{justAdded && (
 						<div class="added-check">
 							{[
-								{ label: 'original', url: originalImageUrl(asset.r2Key) },
-								{ label: 'big', url: imageUrl(asset, 'big') },
-								{ label: 'card', url: imageUrl(asset, 'card') },
-								{ label: 'thumb', url: imageUrl(asset, 'thumb') }
+								{ label: 'original', url: originalImageUrl(asset.r2Key), width: asset.width || undefined },
+								{ label: 'big', url: imageUrl(asset, 'big'), width: SIZE_WIDTHS.big },
+								{ label: 'card', url: imageUrl(asset, 'card'), width: SIZE_WIDTHS.card },
+								{ label: 'thumb', url: imageUrl(asset, 'thumb'), width: SIZE_WIDTHS.thumb }
 							].map((v) => (
 								<figure class="added-variant">
-									<img src={v.url} alt={`${v.label} check`} loading="eager" />
-									<figcaption>{v.label}: <span class="added-size" data-size-for={v.url}>measuring…</span></figcaption>
+									<figcaption>{v.label} ({v.width ? `${v.width}px` : 'full'}): <span class="added-size" data-size-for={v.url}>measuring…</span></figcaption>
+									<img src={v.url} alt={`${v.label} check`} loading="eager" width={v.width} />
 								</figure>
 							))}
 						</div>
@@ -91,30 +91,29 @@ const ogDescription = piece
 
 {justAdded && (
 	<style>
+		/* Stacked, each variant shown at its actual pixel width (capped to the viewport) so you can
+		   judge how it really looks at the size the site serves it — not shrunk to a thumbnail. */
 		.added-check {
 			display: flex;
-			flex-wrap: wrap;
-			gap: 0.75rem;
+			flex-direction: column;
+			gap: 1.5rem;
 			margin: 0.5rem 0 0;
-			padding: 0.5rem;
+			padding: 0.75rem;
 			border: 1px dashed var(--text-muted);
 		}
 		.added-variant {
 			margin: 0;
-			max-width: 160px;
 		}
 		.added-variant img {
 			display: block;
-			max-width: 160px;
-			max-height: 160px;
-			width: auto;
+			max-width: 100%;
 			height: auto;
 		}
 		.added-variant figcaption {
 			font-family: var(--mono);
-			font-size: 0.65rem;
+			font-size: 0.7rem;
 			color: var(--text-muted);
-			margin-top: 0.2rem;
+			margin-bottom: 0.3rem;
 			word-break: break-word;
 		}
 	</style>

@@ -269,7 +269,9 @@ if (piece && Astro.request.method === 'POST') {
 		}).catch(() => {});
 		await purgePages();
 
-		return Astro.redirect(`/piece/${piece.id}`);
+		// `?added=1` shows the post-save diagnostic panel (all variants + their sizes) so newly added
+		// reference photos etc. can be inspected right away — same as the new-piece flow.
+		return Astro.redirect(`/piece/${piece.id}?added=1`);
 	}
 }
 ---
@@ -367,10 +369,6 @@ if (piece && Astro.request.method === 'POST') {
 										accept="image/*"
 									/>
 								</label>
-								<!-- Pre-generated WebP variants, filled client-side (pieceForm.ts). -->
-								<input type="file" class="final-variant" data-size="thumb" name="asset_final_thumb" hidden />
-								<input type="file" class="final-variant" data-size="card" name="asset_final_card" hidden />
-								<input type="file" class="final-variant" data-size="big" name="asset_final_big" hidden />
 								<br />
 								<img id="preview-final" alt="New preview" style="display:none; max-width:200px; max-height:200px; margin-top:0.5rem;" />
 							</>
@@ -409,6 +407,8 @@ if (piece && Astro.request.method === 'POST') {
 				</div>
 
 				<p><button type="submit">Save</button></p>
+				<!-- Per-step progress + error messages during save, written by pieceForm.ts. -->
+				<div id="saveStatus" role="status" aria-live="polite" style="font-family:var(--mono); font-size:0.8rem; line-height:1.6;"></div>
 			</form>
 
 			<form method="POST" style="margin-top:2rem;">
