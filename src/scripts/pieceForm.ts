@@ -8,6 +8,7 @@ import 'leaflet/dist/leaflet.css';
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png?url';
 import markerIcon from 'leaflet/dist/images/marker-icon.png?url';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png?url';
+import heic2any from 'heic2any';
 import Pica from 'pica';
 import { SIZE_WIDTHS } from '../lib/images';
 
@@ -86,8 +87,16 @@ function setupDragAndDrop(): void {
 			const dropped = e.dataTransfer?.files;
 			if (!dropped || dropped.length === 0) return;
 			const dt = new DataTransfer();
-			// Single-file inputs (the main image) take just the first; `multiple` inputs take all.
-			for (const file of input.multiple ? [...dropped] : [dropped[0]]) {
+			if (input.multiple) {
+				// Keep whatever's already selected and add the newly dropped files on top, so
+				// dropping one photo at a time accumulates instead of each drop replacing the last.
+				for (const file of input.files ?? []) dt.items.add(file);
+				for (const file of dropped) {
+					if (file.type.startsWith('image/')) dt.items.add(file);
+				}
+			} else {
+				// Single-file inputs (the main image) take just the first, replacing whatever was there.
+				const file = dropped[0];
 				if (file.type.startsWith('image/')) dt.items.add(file);
 			}
 			if (dt.files.length === 0) return;
@@ -100,6 +109,13 @@ function setupDragAndDrop(): void {
 const VARIANT_SIZES = ['thumb', 'card', 'big'] as const;
 type VariantSize = (typeof VARIANT_SIZES)[number];
 
+/** iPhones save/share photos as HEIC by default, which `createImageBitmap` can't decode in any
+ * browser but Safari — checked by extension too since a HEIC file's `type` sometimes comes back
+ * empty depending on how it reached the browser. */
+function isHeic(file: File): boolean {
+	return /^image\/hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name);
+}
+
 /**
  * Generate the three pre-generated WebP display variants for an uploaded image, entirely in the
  * browser — the site no longer resizes on the fly, so every uploaded image must arrive with these.
@@ -110,10 +126,16 @@ type VariantSize = (typeof VARIANT_SIZES)[number];
  */
 async function makeVariants(file: File): Promise<Record<VariantSize, File> | null> {
 	try {
+		// HEIC needs a WASM decode to a browser-native format before `createImageBitmap` can touch
+		// it. libheif applies the container's orientation during this decode, so the resulting JPEG
+		// is already right-side up — no separate EXIF-orientation step needed for it.
+		// `multiple` isn't passed, so heic2any always resolves a single Blob here, never the array
+		// variant it returns for multi-image HEIC containers.
+		const source = isHeic(file) ? ((await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 })) as Blob) : file;
 		// `imageOrientation: 'from-image'` applies the photo's EXIF orientation (phone photos are often
 		// stored landscape with a "rotate 90°" tag) so the variant pixels come out the right way up —
 		// the old Cloudflare Images binding did this automatically; a plain decode would not.
-		const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+		const bitmap = await createImageBitmap(source, { imageOrientation: 'from-image' });
 		const out = {} as Record<VariantSize, File>;
 		for (const size of VARIANT_SIZES) {
 			const scale = Math.min(1, SIZE_WIDTHS[size] / bitmap.width); // cap width, never enlarge
@@ -370,6 +392,12 @@ const EXTRA_KIND_OPTIONS: Array<[string, string]> = [
 	['setup', 'Setup / easel photo']
 ];
 
+// File objects have no stable id of their own, so this is what identifies "the same file" across
+// a list rebuild (e.g. after a drop adds another file, or a row's remove button is clicked).
+function fileIdentity(file: File): string {
+	return `${file.name}:${file.size}:${file.lastModified}`;
+}
+
 /** The "additional photos" input used to show one generic preview and always upload as
  * `unsorted`, tagged for real only later on the edit page. Now each selected file gets its own
  * thumbnail plus a kind selector immediately, right here — tagging happens once, at selection
@@ -380,6 +408,19 @@ function setupExtraAssetTagging(): void {
 	const input = document.getElementById('extraAssetInput') as HTMLInputElement | null;
 	const list = document.getElementById('extraAssetList');
 	if (!input || !list) return;
+
+	// Chosen kinds survive the list being torn down and rebuilt (on every drop/remove) by keying
+	// on file identity rather than list position.
+	const kindByFile = new Map<string, string>();
+
+	function removeFile(index: number): void {
+		const dt = new DataTransfer();
+		(input!.files ? Array.from(input!.files) : []).forEach((file, i) => {
+			if (i !== index) dt.items.add(file);
+		});
+		input!.files = dt.files;
+		input!.dispatchEvent(new Event('change', { bubbles: true }));
+	}
 
 	input.addEventListener('change', () => {
 		list.innerHTML = '';
@@ -401,9 +442,19 @@ function setupExtraAssetTagging(): void {
 				option.textContent = label;
 				select.appendChild(option);
 			}
+			const identity = fileIdentity(file);
+			const savedKind = kindByFile.get(identity);
+			if (savedKind) select.value = savedKind;
+			select.addEventListener('change', () => kindByFile.set(identity, select.value));
+
+			const removeBtn = document.createElement('button');
+			removeBtn.type = 'button'; // this sits inside the main form — must not submit it
+			removeBtn.textContent = 'Remove';
+			removeBtn.addEventListener('click', () => removeFile(i));
 
 			row.appendChild(img);
 			row.appendChild(select);
+			row.appendChild(removeBtn);
 			list.appendChild(row);
 		});
 	});

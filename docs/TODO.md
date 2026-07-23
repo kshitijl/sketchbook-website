@@ -371,17 +371,13 @@ passing. Writing these actually caught two real, live bugs (not hypothetical):
       differ per route type, not per instance of the same route.
 - [ ] Confirm phase/density chart reads well on the timeline
 - [ ] Test the full admin flow on a phone (upload + retag + reorder favorites)
-  - [ ] **Specifically check HEIC**: iPhones often save/share photos as HEIC by default. Our
-        `getImageDimensions()` (src/lib/imageDimensions.ts) only parses PNG/JPEG — a HEIC upload
-        wouldn't crash (dimensions just silently stay unset, already handled), but the bigger risk
-        is that HEIC has poor `<img>` support outside Safari, so a HEIC-uploaded piece might not
-        display for family/friends on Chrome/Firefox/Android. Whether this actually bites depends
-        on whatever app/share-sheet gets the photo onto the device used for the admin form (iOS
-        often auto-converts to JPEG in many sharing paths, but not always) — worth deliberately
-        testing with a real HEIC file before assuming it's fine. If it is a problem: either always
-        export/convert to JPEG before uploading, or add server-side transcoding (a real chunk of
-        work — HEIC decoding is nontrivial, would likely need a WASM library or the Cloudflare
-        Images product rather than anything hand-rolled).
+  - [x] **HEIC support**: `makeVariants()` in `pieceForm.ts` decodes with `createImageBitmap`,
+        which can't read HEIC in any browser but Safari — an iPhone photo picked in Chrome/Firefox
+        would have hit "Couldn't resize the main image". Added `heic2any` (zero deps, WASM
+        libheif) to convert HEIC/HEIF to JPEG client-side before decoding, so it goes through the
+        same Pica resize/WebP-encode path as any other format. Only bundled into the admin
+        new/edit-piece page (~1.4MB chunk), not the public site. Still worth a real-device test
+        with an actual `.heic` file before trusting this fully.
 - [x] **Gap found on review**: file uploads only checked `size > 0`, never validated that the file
       was actually an image — the `accept="image/*"` on the `<input>` is just a client-side hint,
       trivially bypassed (or just the wrong file picked by accident). Added a server-side check in
