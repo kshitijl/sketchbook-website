@@ -94,29 +94,47 @@ const tagFrequency = getTagFrequency(data);
 		<p><em>Nothing uploaded yet.</em></p>
 	) : (
 		<form method="POST">
+			<p class="section-label">1. Select pieces by tag</p>
 			<p>
-				<label>Tag(s), comma-separated<br /><input type="text" id="tagsInput" name="tags" placeholder="e.g. painted from life" /></label>
+				<input type="text" id="selectExpr" placeholder="e.g. gouache, -watercolor | sketchbook page" style="width:100%; max-width:32rem;" />
 			</p>
+			<p>
+				<button type="button" id="selectMatching">Select matching</button>
+				<button type="button" id="deselectMatching">Deselect matching</button>
+				{' · '}
+				<button type="button" id="selectAllBtn">Select all</button>
+				<button type="button" id="clearBtn">Clear</button>
+				<span id="selectCount" style="margin-left:0.5rem; color:var(--text-muted);"></span>
+			</p>
+			<p style="font-size:0.8rem; color:var(--text-muted);">
+				<code>,</code> = AND · <code>|</code> = OR · <code>-</code> or <code>not</code> before a tag = exclude it.
+				For the complement of an expression: <strong>Select all</strong>, then <strong>Deselect matching</strong>.
+				Repeated <strong>Select matching</strong> unions (that's your OR too).
+			</p>
+
 			{tagFrequency.length > 0 && (
 				<p>
+					<span style="font-size:0.8rem; color:var(--text-muted);">Click a tag to add it to whichever field you last used:</span><br />
 					{tagFrequency.map(({ tag, count }) => (
-						<button type="button" class="tag-chip" data-tag={tag} style="margin:0 0.25rem 0.25rem 0;">
+						<button type="button" class="tag-chip" data-tag={tag} style="margin:0.25rem 0.25rem 0 0;">
 							{tag} ({count})
 						</button>
 					))}
 				</p>
 			)}
+
+			<p class="section-label">2. Tag to add / remove</p>
 			<p>
+				<input type="text" id="tagsInput" name="tags" placeholder="e.g. painted from life" style="max-width:24rem;" />
+				{' '}
 				<button type="submit" name="intent" value="add">Add to selected</button>
 				<button type="submit" name="intent" value="remove">Remove from selected</button>
-				{' '}
-				<label><input type="checkbox" id="selectAll" /> Select all</label>
 			</p>
 
 			<ul style="list-style:none; padding:0;">
 				{pieces.map((piece) => (
 					<li style="margin-bottom:0.5rem; display:flex; align-items:center; gap:0.5rem;">
-						<input type="checkbox" class="piece-checkbox" name={`piece_${piece.id}`} />
+						<input type="checkbox" class="piece-checkbox" name={`piece_${piece.id}`} data-tags={piece.tags.join(',')} />
 						<PieceThumb piece={piece} size={48} />
 						<a href={`/piece/${piece.id}`}>{piece.title}</a>
 						<span style="color:var(--text-muted);">— {piece.date}{piece.tags.length > 0 ? ` — ${piece.tags.join(', ')}` : ''}</span>
@@ -131,14 +149,80 @@ const tagFrequency = getTagFrequency(data);
 </Base>
 
 <script>
-	import { setupTagChips } from '../../scripts/pieceForm';
-	setupTagChips();
+	const selectExpr = document.getElementById('selectExpr') as HTMLInputElement | null;
+	const tagsInput = document.getElementById('tagsInput') as HTMLInputElement | null;
+	const checkboxes = [...document.querySelectorAll<HTMLInputElement>('.piece-checkbox')];
+	const countEl = document.getElementById('selectCount');
 
-	const selectAll = document.getElementById('selectAll') as HTMLInputElement | null;
-	const checkboxes = document.querySelectorAll<HTMLInputElement>('.piece-checkbox');
-	selectAll?.addEventListener('change', () => {
-		checkboxes.forEach((cb) => {
-			cb.checked = selectAll.checked;
+	// Tag chips append to whichever text field you last used (selection expression by default).
+	let activeInput: HTMLInputElement | null = selectExpr;
+	[selectExpr, tagsInput].forEach((el) => el?.addEventListener('focus', () => (activeInput = el)));
+	document.querySelectorAll<HTMLButtonElement>('.tag-chip').forEach((chip) => {
+		chip.addEventListener('click', () => {
+			const tag = chip.dataset.tag;
+			if (!tag || !activeInput) return;
+			const cur = activeInput.value.trim();
+			activeInput.value = cur ? `${cur}, ${tag}` : tag;
+			activeInput.focus();
 		});
 	});
+
+	function updateCount() {
+		if (countEl) countEl.textContent = `${checkboxes.filter((cb) => cb.checked).length} selected`;
+	}
+
+	// A tiny tag-expression language, in disjunctive normal form: clauses separated by "|" are OR'd;
+	// within a clause, comma-separated terms are AND'd; a term with a leading "-", "!" or "not " means
+	// that tag must be absent. Comma/pipe delimiters never collide with tag text (tags can contain
+	// spaces but not those), so multi-word tags like "sketchbook page" just work.
+	type Term = { tag: string; neg: boolean };
+	function parseExpr(text: string): Term[][] {
+		return text
+			.split('|')
+			.map((clause) =>
+				clause
+					.split(',')
+					.map((t) => t.trim())
+					.filter(Boolean)
+					.map((term): Term => {
+						const m = /^(not\s+|-|!)(.*)$/i.exec(term);
+						return m ? { tag: m[2].trim().toLowerCase(), neg: true } : { tag: term.toLowerCase(), neg: false };
+					})
+					.filter((t) => t.tag)
+			)
+			.filter((clause) => clause.length > 0);
+	}
+	function pieceMatches(cb: HTMLInputElement, clauses: Term[][]): boolean {
+		const tags = (cb.dataset.tags || '').split(',').filter(Boolean);
+		// DNF: any clause fully satisfied. Within a clause every term must hold (present, or absent
+		// for a negated term) — `tags.includes(tag) !== neg` captures both.
+		return clauses.some((clause) => clause.every(({ tag, neg }) => tags.includes(tag) !== neg));
+	}
+	function applyToMatching(checked: boolean) {
+		const clauses = parseExpr(selectExpr?.value || '');
+		if (clauses.length === 0) return;
+		checkboxes.forEach((cb) => {
+			if (pieceMatches(cb, clauses)) cb.checked = checked;
+		});
+		updateCount();
+	}
+
+	document.getElementById('selectMatching')?.addEventListener('click', () => applyToMatching(true));
+	document.getElementById('deselectMatching')?.addEventListener('click', () => applyToMatching(false));
+	document.getElementById('selectAllBtn')?.addEventListener('click', () => {
+		checkboxes.forEach((cb) => (cb.checked = true));
+		updateCount();
+	});
+	document.getElementById('clearBtn')?.addEventListener('click', () => {
+		checkboxes.forEach((cb) => (cb.checked = false));
+		updateCount();
+	});
+	selectExpr?.addEventListener('keydown', (e) => {
+		if (e.key === 'Enter') {
+			e.preventDefault(); // this input is inside the form — don't submit, just select
+			applyToMatching(true);
+		}
+	});
+	checkboxes.forEach((cb) => cb.addEventListener('change', updateCount));
+	updateCount();
 </script>
