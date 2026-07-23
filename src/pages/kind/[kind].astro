@@ -33,7 +33,7 @@ const results = isValidKind(kind) ? getAssetsByKind(data, kind) : [];
 					{results.map(({ piece, asset }) => (
 						<li>
 							<a href={`/piece/${piece.id}`}>
-								<img src={imageUrl(asset.r2Key, 'card')} alt={asset.caption || piece.title} loading="lazy" />
+								<img src={imageUrl(asset, 'card')} alt={asset.caption || piece.title} loading="lazy" />
 								<span class="caption">
 									{piece.title}{asset.caption ? ` — ${asset.caption}` : ''} — {piece.date}
 								</span>

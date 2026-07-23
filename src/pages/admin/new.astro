@@ -5,6 +5,7 @@ import { getPieces, updatePieces } from '../../lib/data';
 import { getTagFrequency } from '../../lib/facets';
 import { generateAssetId, generatePieceId, buildAssetKey } from '../../lib/ids';
 import { getImageDimensions } from '../../lib/imageDimensions';
+import { getVariantFiles } from '../../lib/images';
 import { purgePages } from '../../lib/purge';
 import { isAuthorizedAdminRequest } from '../../lib/adminGuard';
 import { backupAsset, backupPieceData, logBackupEvent } from '../../lib/backup';
@@ -76,6 +77,20 @@ if (Astro.request.method === 'POST') {
 		}
 	}
 
+	// Every uploaded image must arrive with its three client-generated WebP variants (see
+	// pieceForm.ts). Without them there's nothing to display — a hard error, not a silent
+	// master-only record (e.g. if JavaScript didn't run in the browser).
+	if (finalFile instanceof File && finalFile.size > 0 && !getVariantFiles(formData, (s) => `asset_final_${s}`)) {
+		errors.push('Resized image versions are missing — is JavaScript enabled? They’re generated in the browser before upload.');
+	}
+	const extraForCheck = formData.getAll('asset_extra');
+	for (let i = 0; i < extraForCheck.length; i++) {
+		const f = extraForCheck[i];
+		if (f instanceof File && f.size > 0 && !getVariantFiles(formData, (s) => `asset_extra_${s}_${i}`)) {
+			errors.push(`Additional photo #${i + 1}: resized versions are missing (is JavaScript enabled?).`);
+		}
+	}
+
 	if (errors.length === 0) {
 		const tags = values.tags
 			.split(',')
@@ -94,7 +109,7 @@ if (Astro.request.method === 'POST') {
 		let imagesBackedUp = 0;
 		const backupErrors: string[] = [];
 
-		async function uploadAsset(file: File, kind: AssetKind) {
+		async function uploadAsset(file: File, kind: AssetKind, variants: { thumb: File; card: File; big: File }) {
 			const assetId = generateAssetId(existingAssetIds);
 			existingAssetIds.add(assetId);
 			const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
@@ -104,18 +119,26 @@ if (Astro.request.method === 'POST') {
 			const contentType = file.type || 'application/octet-stream';
 			await env.ART_BUCKET.put(r2Key, buffer, { httpMetadata: { contentType } });
 			// Best-effort: a backup failure must never break the actual upload it's shadowing,
-			// but it should still show up in the visible log rather than being fully silent.
+			// but it should still show up in the visible log rather than being fully silent. Only the
+			// master is backed up — the variants below are regenerable derivatives.
 			try {
 				await backupAsset(env.BACKUP_BUCKET, r2Key, buffer, contentType);
 				imagesBackedUp++;
 			} catch (err) {
 				backupErrors.push(`Failed to back up ${r2Key}: ${String(err)}`);
 			}
-			assets.push({ id: assetId, kind, r2Key, width: dims?.width ?? 0, height: dims?.height ?? 0 });
+			// Store the three pre-generated WebP variants (generated client-side, see pieceForm.ts).
+			const sizes = { thumb: '', card: '', big: '' };
+			for (const size of ['thumb', 'card', 'big'] as const) {
+				const key = buildAssetKey(newId, `${assetId}-${size}`, 'webp');
+				await env.ART_BUCKET.put(key, await variants[size].arrayBuffer(), { httpMetadata: { contentType: 'image/webp' } });
+				sizes[size] = key;
+			}
+			assets.push({ id: assetId, kind, r2Key, sizes, width: dims?.width ?? 0, height: dims?.height ?? 0 });
 		}
 
 		if (finalFile instanceof File && finalFile.size > 0) {
-			await uploadAsset(finalFile, 'final');
+			await uploadAsset(finalFile, 'final', getVariantFiles(formData, (s) => `asset_final_${s}`)!);
 		}
 
 		// Each "additional photo" is tagged right at selection time — a `kind_extra_<i>` select
@@ -131,7 +154,7 @@ if (Astro.request.method === 'POST') {
 				typeof kindValue === 'string' && (ASSET_KINDS as string[]).includes(kindValue)
 					? (kindValue as AssetKind)
 					: 'unsorted';
-			await uploadAsset(file, kind);
+			await uploadAsset(file, kind, getVariantFiles(formData, (s) => `asset_extra_${s}_${i}`)!);
 		}
 
 		const piece: Piece = {
@@ -200,6 +223,10 @@ if (Astro.request.method === 'POST') {
 					required
 				/>
 			</label>
+			<!-- Populated client-side (pieceForm.ts) with the pre-generated WebP variants. -->
+			<input type="file" class="final-variant" data-size="thumb" name="asset_final_thumb" hidden />
+			<input type="file" class="final-variant" data-size="card" name="asset_final_card" hidden />
+			<input type="file" class="final-variant" data-size="big" name="asset_final_big" hidden />
 		</p>
 		<p>
 			<img id="finalImagePreview" alt="Preview" style="display:none; max-width:320px; max-height:320px;" />

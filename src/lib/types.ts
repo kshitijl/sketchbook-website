@@ -11,7 +11,14 @@ export type AssetKind =
 export interface Asset {
 	id: string;
 	kind: AssetKind;
+	/** The pristine original, exactly as uploaded — the archive's preservation master. Only ever
+	 * served by "View full resolution"; never embedded on a page. */
 	r2Key: string;
+	/** Pre-generated, web-serving WebP variant keys — one per display size. Generated at upload time
+	 * (client-side) and by the backfill; every asset always has all three. Not optional: a missing
+	 * variant is a bug to fix, not a state to tolerate (no master fallback — see docs/architecture.md).
+	 * `imageUrl(asset, size)` in images.ts resolves the right one. */
+	sizes: { thumb: string; card: string; big: string };
 	width: number;
 	height: number;
 	caption?: string;

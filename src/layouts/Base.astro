@@ -331,41 +331,98 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 				margin: 1.5rem 0 0.35rem;
 			}
 
-			/* Timeline scrubber: a native range input, one step per month (see index.astro) —
-			   dragging it is the "scrubbing," no hand-rolled pointer/drag JS needed. Its own
-			   background is the colored month-by-month track (--timeline-gradient, computed
-			   server-side); appearance:none strips the native track chrome on both engines so
-			   that background actually shows through instead of being covered by it. */
-			.timeline-scrubber {
-				appearance: none;
-				-webkit-appearance: none;
-				width: 100%;
-				height: 2.5rem;
-				margin: 0.75rem 0;
-				border: 2px solid var(--border);
-				background: var(--timeline-gradient);
-				cursor: pointer;
+			/* Timeline activity bar chart: one bar per month (built server-side in index.astro),
+			   each a vertical flex stack of medium-colored segments that pile up from the baseline.
+			   The whole chart is a row of equal-width bars sitting on a 2px baseline. Segment colors
+			   are a validated categorical pair (blue = wet media, sepia = dry media) plus a neutral
+			   for "other" — see the dataviz palette check in the timeline work. */
+			.timeline-chart {
+				display: flex;
+				align-items: flex-end;
+				gap: 2px;
+				height: var(--chart-h);
+				margin: 0.5rem 0 0;
+				border-bottom: 2px solid var(--border);
 			}
-			.timeline-scrubber::-moz-range-track {
-				height: 2.5rem;
+			.timeline-bar {
+				/* Override the global dark filled-button style — a bar is a transparent track that
+				   holds the colored fills, not a button-looking box. */
+				flex: 1;
+				min-width: 0;
+				height: 100%;
+				display: flex;
+				flex-direction: column;
+				justify-content: flex-end;
+				gap: 2px;
+				padding: 0;
 				background: transparent;
 				border: none;
-			}
-			.timeline-scrubber::-webkit-slider-thumb {
-				-webkit-appearance: none;
-				width: 0.75rem;
-				height: 2.9rem;
-				background: var(--pink);
-				border: 2px solid var(--border);
 				cursor: pointer;
 			}
-			.timeline-scrubber::-moz-range-thumb {
+			.timeline-bar:hover:not(:disabled) {
+				/* Highlight the whole month column on hover, not just the filled part. */
+				background: rgba(20, 20, 20, 0.07);
+			}
+			.timeline-bar.selected {
+				background: rgba(20, 20, 20, 0.07);
+				outline: 2px solid var(--pink);
+				outline-offset: -2px;
+			}
+			.timeline-bar:disabled {
+				cursor: default;
+			}
+			.timeline-bar .seg {
+				display: block;
+				width: 100%;
+			}
+			.seg-wet {
+				background: #2f6fd0;
+			}
+			.seg-dry {
+				background: #b5732e;
+			}
+			.seg-other {
+				background: #a9a295;
+			}
+			.timeline-axis {
+				display: flex;
+				gap: 2px;
+				margin-top: 0.25rem;
+				font-family: var(--mono);
+				font-size: 0.65rem;
+				color: var(--text-muted);
+			}
+			.timeline-axis .tick {
+				flex: 1;
+				min-width: 0;
+				white-space: nowrap;
+			}
+			.timeline-legend {
+				display: flex;
+				gap: 1rem;
+				margin: 0.5rem 0 0;
+				font-family: var(--mono);
+				text-transform: uppercase;
+				font-size: 0.65rem;
+				color: var(--text-muted);
+			}
+			.timeline-legend span {
+				display: inline-flex;
+				align-items: center;
+				gap: 0.35rem;
+			}
+			.timeline-legend .swatch {
 				width: 0.75rem;
-				height: 2.9rem;
-				background: var(--pink);
-				border: 2px solid var(--border);
-				border-radius: 0;
-				cursor: pointer;
+				height: 0.75rem;
+				display: inline-block;
+				border: 1px solid var(--border);
+			}
+			.timeline-month {
+				font-family: var(--mono);
+				text-transform: uppercase;
+				font-size: 0.75rem;
+				color: var(--text);
+				margin: 1rem 0 0;
 			}
 			.timeline-gallery-frame {
 				display: flex;

@@ -25,7 +25,7 @@ const { pieces, large = false, heroFirst = false } = Astro.props;
 		return (
 			<li>
 				<a href={`/piece/${piece.id}`}>
-					{asset && <img src={imageUrl(asset.r2Key, size)} alt={piece.title} loading="lazy" />}
+					{asset && <img src={imageUrl(asset, size)} alt={piece.title} loading="lazy" />}
 					<span class="caption">{piece.title} — {piece.date}</span>
 				</a>
 			</li>

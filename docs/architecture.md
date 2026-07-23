@@ -103,10 +103,10 @@ cheap to read, cheap to write, cheap to ship to the browser whole for the map/ti
   "notes": "Free text — the artist's own commentary on the piece.",
   "favoriteRank": 3,
   "assets": [
-    { "id": "a1", "kind": "final", "r2Key": "assets/2023-india-jaipur-001/a1-v1.png", "width": 0, "height": 0 },
-    { "id": "a2", "kind": "reference-photo", "r2Key": "...", "width": 0, "height": 0 },
-    { "id": "a3", "kind": "value-study", "r2Key": "...", "width": 0, "height": 0 },
-    { "id": "a4", "kind": "setup", "r2Key": "...", "width": 0, "height": 0, "caption": "easel + travel palette" }
+    { "id": "a1", "kind": "final", "r2Key": "assets/2023-india-jaipur-001/a1-v1.png",
+      "sizes": { "thumb": "assets/2023-india-jaipur-001/a1-thumb-v1.webp", "card": "assets/2023-india-jaipur-001/a1-card-v1.webp", "big": "assets/2023-india-jaipur-001/a1-big-v1.webp" },
+      "width": 0, "height": 0 },
+    { "id": "a2", "kind": "reference-photo", "r2Key": "...", "sizes": { "thumb": "...", "card": "...", "big": "..." }, "width": 0, "height": 0 }
   ]
 }
 ```
@@ -121,6 +121,12 @@ cheap to read, cheap to write, cheap to ship to the browser whole for the map/ti
   freely; a new kind is just a new string value, never a schema migration. `unsorted` is the
   fallback kind for an "additional photo" that somehow gets uploaded without a real kind picked (see
   **Admin form conveniences** below for the normal path, where a kind is chosen at upload time).
+- `assets[].r2Key` / `sizes`: `r2Key` is always the **pristine original** (preservation master, only
+  served by "View full resolution", and the only thing backed up). `sizes` holds the three
+  pre-generated WebP variant keys (`thumb`/`card`/`big`) the site actually embeds — **required, never
+  optional, no master fallback**: every asset always has all three (enforced by the type, the upload
+  path, and the backfill), so a missing variant is a bug to fix, not a state to tolerate. `imageUrl(asset,
+  size)` resolves it. See the **Images** section for how variants are generated (at upload, in the browser).
 
 Why `stage` gets its own field when medium/trips don't: `stage` is single-select (a piece just *is*
 finished or a study, never both), which an open `tags` array can't enforce — a real structural
@@ -358,56 +364,76 @@ account being compromised or suspended, not just an app bug) — a strictly larg
 model than "bugs in this code" than what was asked for. Worth considering later if wanted, not
 built now.
 
-## Images: R2 + on-demand resizing via the Images binding
+## Images: pre-generated variants on R2, no on-the-fly resizing
 
-Originals land in R2 (zero egress fees, ~$0.015/GB/mo). Serving them goes through
-`src/pages/img/[...key].ts`, which does one of two things depending on the request:
+Every image is stored on R2 as plain, immutable, versioned objects — **a preservation master plus
+three pre-generated WebP variants** (`thumb`/`card`/`big`). There is **no on-the-fly resizing**:
+`src/pages/img/[...key].ts` is a dumb passthrough that streams whatever key it's given
+(`writeHttpMetadata` + `etag` + `Cache-Control: public, max-age=31536000, immutable`). Nothing to
+transform, nothing to fail.
 
-- **No `?size=` query param** → the untouched original, byte-for-byte, exactly as uploaded. This is
-  `originalImageUrl(r2Key)` in `src/lib/images.ts` — used sparingly, e.g. the "View full
-  resolution" link on `/piece/<id>`, never for anything embedded directly on a page.
-- **`?size=thumb|card|big`** → resized and re-encoded to WebP on the fly via the Cloudflare
-  **Images binding** (`env.IMAGES` — not the older `/cdn-cgi/image/...` URL-rewriting mechanism
-  originally planned; the Cloudflare adapter auto-provisions this binding, confirmed by inspecting
-  the generated deploy config, even though it isn't declared in this project's own
-  `wrangler.jsonc`). Falls back to serving the untransformed original on any transform failure
-  (corrupt file, unsupported format, etc.) — best-effort, matching the pattern used elsewhere in
-  this codebase for things that shouldn't be allowed to break the request they're shadowing.
+- `asset.r2Key` = the pristine master, exactly as uploaded (`originalImageUrl()` / the "View full
+  resolution" link on `/piece/<id>`; never embedded on a page). It's the archive copy and the only
+  thing the backup bucket keeps — variants are regenerable derivatives, not backed up.
+- `asset.sizes = { thumb, card, big }` = the variant keys. **Required, not optional, no master
+  fallback** (see the piece-record shape section) — every asset always has all three, so a missing
+  one is a bug that fails loudly rather than silently serving the multi-MB master. `imageUrl(asset,
+  size)` (`src/lib/images.ts`) just returns `/img/${asset.sizes[size]}`.
+- `SIZE_WIDTHS` (`src/lib/images.ts`): `thumb` 240px (admin thumbnails / map hover popup), `card`
+  1000px (every gallery grid, the OG/Twitter image, the timeline gallery frame), `big` 1800px
+  (`/piece/<id>`'s full view, the map's inline detail panel, the `heroFirst` opening image). Widths
+  are shared by the client generator and the backfill so both produce identical buckets. Each variant
+  is a WebP at quality 82 — for a 22MB PNG scan that's `card` ~105KB, `big` ~330KB, `thumb` ~9KB.
 
-**Sizes are a small fixed set of buckets, not one arbitrary width per container** —
-`SIZE_WIDTHS` in `src/lib/images.ts`: `thumb` (240px, admin thumbnails / map hover popup), `card`
-(1000px, the big gallery grid everywhere it appears, and the OG/Twitter card image), `big` (1800px,
-`/piece/<id>`'s full view, the map's inline detail panel, the timeline gallery frame, and the one
-`heroFirst` opening image specifically, since it renders much larger than an ordinary card).
-`imageUrl(r2Key, size)` takes size as a **required** argument — no default — so every call site is
-a conscious choice rather than silently inheriting whatever a default happened to be. A fixed
-bucket set also keeps the number of distinct (source image, size) combinations bounded, which
-matters because Cloudflare Images bills and Workers Cache caches each unique combination
-separately — an arbitrary width per breakpoint would fragment across far more variants than
-actually needed.
+**Why this replaced the Cloudflare Images binding.** The site used `env.IMAGES` to resize on demand.
+It brought a cluster of pain for a site that only ever needs three fixed sizes for one editor: a hard
+**20MB `.input()` limit** that failed *silently* (the fallback served the full 20–32MB original for
+every size — found live as a `?size=card` returning 20MB of `image/png`); a **high default WebP
+quality with no control** (a 1800px `big` came out 2.6MB — larger than the source it was made from,
+because the encoder over-spends bits and preserves the previous generation's artifacts); on-demand
+transform + error-fallback machinery; and, for oversized images, a double lossy re-encode. Removing
+the binding deletes all of that. (An earlier intermediate fix — a `displayKey` "access copy" for
+just the >20MB images — was itself a workaround for the 20MB limit and is fully superseded by this.)
 
-**This works in local dev, unlike the URL-rewriting approach** — confirmed directly (not assumed):
-`wrangler dev`/`astro dev` support a "low-fidelity" mode of the Images binding covering exactly
-`width`/`height`/`rotate`/`format`, which is all this needs. Verified locally against a real
-request (content-type changed from `image/png` to `image/webp`, and the output's actual pixel
-dimensions matched the requested bucket width) before ever deploying.
+**Generation happens at upload, in the browser.** The Worker can't resize a 20–30MB scan (Workers
+memory + no image lib we want to ship there), so `src/scripts/pieceForm.ts`'s `makeVariants()`
+generates the three WebPs client-side when an image is selected — `createImageBitmap` (an
+ImageBitmap *source*, not a full-size canvas, which sidesteps Safari's canvas-area limit on large
+scans) drawn into a small target canvas, then `canvas.toBlob('image/webp', 0.82)`. They're loaded
+into hidden `asset_<final|extra>_<size>[_i]` file inputs via `DataTransfer` (keeping the normal
+multipart submit), and **Save is disabled (ref-counted) until every variant is ready**. The server
+(`admin/new.astro` + `admin/edit/[id].astro`, shared `uploadAsset`, via `getVariantFiles()`) refuses
+to create an asset unless all three variant files are present — so a variant-less record is never
+written (covers JS-off / a failed generation with a clear form error, not a silent bad record).
 
-**Real-world confirmation against production** (a 5,011,202-byte / 5697×4007 iPhone photo):
-`big` → 2,125,324 bytes (−58%), `card` → 745,980 bytes (−85%), `thumb` → 47,878 bytes (−99%). All
-three fall back correctly to the untransformed original on an invalid/missing `size` value or a
-transform error, and re-fetch a fresh R2 read for that fallback rather than risk returning a
-partially-consumed stream if the transform attempt had already started reading it.
+`makeVariants()` is deliberately isolated behind that one function so the resize/encode engine is
+swappable. It currently uses `<canvas>` (zero dependency, works on every browser, no WASM to load).
+A sharper upgrade — **wasm-vips** (libvips-in-WASM, same engine `sharp` uses; verified in Node here
+producing `card` 114KB / `big` 350KB) or **Pica** (Lanczos) — is a change confined to that function.
+Canvas was chosen for the initial rollout specifically because it can't be browser-verified in this
+environment (no browser automation available), and a WASM bundling/runtime failure would break every
+upload; canvas can't. Worth revisiting once wasm-vips can be tested on a real (esp. iOS 16.4+) device.
 
-**A gap found live in that same fallback**: it only ran inside a `catch` block, on the assumption
-that a failed transform always throws. It doesn't — `ImageTransformationResult.response()` (see
-`worker-configuration.d.ts`) is synchronous and can itself return a `Response` whose *status* is an
-error, without throwing at all. Caught live: one specific piece's `?size=card` request came back a
-bare `503` with an empty body — but only for `card`, on that one image; `thumb`/`big` for the exact
-same source worked, and `card` for every other image worked — some transient hiccup in Cloudflare's
-Images backend specific to that one (image, size) pairing. The old code forwarded that error
-response straight to the browser (a real, correctly-tagged, correctly-uploaded piece silently
-failed to display) instead of falling back. Fixed by also checking `!response.ok` and throwing in
-that case, routing it into the same catch-and-serve-the-original path.
+**EXIF orientation — must be applied in every generation path.** Phone photos are frequently stored
+landscape with an EXIF orientation tag (e.g. 6 = rotate 90°); the pixels are sideways until the tag
+is applied. The old Cloudflare binding did this automatically — the pre-generated pipeline must do it
+explicitly, or variants come out rotated wrong. Both paths handle it: the client uses
+`createImageBitmap(file, { imageOrientation: 'from-image' })`, and `sharp` needs a bare `.rotate()`
+(no args) before resize. This was caught live after the first backfill omitted it (a whole piece's
+photos sideways), fixed by `scripts/reorient-image-variants.mjs` (regenerate with `.rotate()` only
+the JPEG masters whose EXIF orientation ≠ 1 — PNG scans have none). **Gotcha within that fix:** sharp
+caches `metadata()` by filename, so reading orientation from a reused temp path returns the *first*
+file's value for every asset — read metadata from a `Buffer` (and/or `sharp.cache(false)`). Note the
+resize/decode pipeline is *not* affected by this cache, so the backfill's variant *content* was
+always correct — only the orientation *check* was fooled.
+
+**Backfill.** Images uploaded before this change had only a master. `scripts/backfill-image-variants.mjs`
+(Node + `sharp`, i.e. libvips — matches the intended client engine) generated all three variants for
+every existing asset against production R2 via `wrangler --remote`: snapshots `pieces.json` first,
+skips assets already done, writes progress after each piece (resumable), and exits non-zero if any
+asset still lacks variants (since the required-`sizes` invariant means the new code must not deploy
+until coverage is 100%). Run **before** deploying the new code — the old deployed code ignores
+`sizes`, so there's no broken window.
 
 ## Auth: Cloudflare Access + Google
 
@@ -489,21 +515,31 @@ piece still gets a real static permalink page (sharing, SEO/OG tags, JS-off acce
 
 ## Timeline (the other JS island)
 
-A native `<input type="range">` scrubber, one step per month rather than per piece — dragging a
-native slider is "the scrubbing," and per-month granularity means it's coarse/deliberate rather than
-needing fine motor precision to land on one specific piece among hundreds. Oldest month on the left,
-most recent on the right (opens on the most recent), matching how a timeline reads. Below it, a small
-gallery frame shows the selected month's primary image, with `‹ Previous here` / `Next here ›`
-buttons that appear only when a month has more than one piece, to page through them without touching
-the slider — dragging picks "when," the arrows pick "which one." `src/scripts/timelineScrubber.ts`,
-same `setupX()`-export-plus-embedded-JSON pattern as the map island.
+An **activity bar chart**, one bar per month across the whole span the collection covers — bar
+height is how many pieces were made that month, and each bar is stacked by medium (dry/wet/other) so
+it reads *how much* and *what kind* of work at a glance. This replaced an earlier `<input
+type="range">` scrubber whose only "meaning" was a colored gradient track: the slider never labeled
+the month or year and the gradient bands were too subtle to read as data, so it hid the data instead
+of showing it (owner feedback: "it doesn't say the month or year, it just doesn't seem to mean
+anything"). The bar chart makes the data itself the visual — the same "what have I been up to" the
+scrubber's track was trying to convey, but legibly and clickable.
 
-**The track itself is the "what have I been up to" visual**: its background is a server-computed
-`linear-gradient`, one hard-edged color band per month, blended between a gray-brown (dry media) and
-blue (wet media) based on that month's actual mix — reusing `classifyMedium()`, the same dry/wet
-split already used elsewhere, not a new finer-grained medium taxonomy. This replaced an earlier
-static stacked-bar-per-month chart entirely, rather than keeping both, since the slider's track
-conveys the same density information while also being the actual control.
+- **Empty months are kept as gaps** (a disabled, empty baseline bar), not skipped — so quiet
+  stretches actually show up rather than the axis silently compressing time. `monthsBetween()` in
+  `index.astro` enumerates every `YYYY-MM` from the first piece's month to the last, inclusive.
+- **Bars are `<button>`s**; clicking one selects that month and shows its pieces in the gallery frame
+  below (the same `‹`/`›` prev/next frame the scrubber used, unchanged — it appears when a month has
+  more than one piece). Opens on the most recent non-empty month. Empty months are `disabled`, so
+  they're not focusable or clickable and the JS ignores them (`:not(:disabled)`).
+- **Colors**: dry vs. wet reuses `classifyMedium()`, the same dry/wet split used elsewhere, with
+  `unclassified` folded into a neutral "other" segment. The two real categories use a categorical
+  pair (blue `#2f6fd0` = wet, sepia `#b5732e` = dry) validated with the dataviz skill's palette
+  checker against the light surface — the site is light-only, so only light mode was validated.
+- The chart is server-rendered CSS (a flex row of bars, each a flex column of segment `<span>`s with
+  server-computed pixel heights) — no drawing library, no canvas. `src/scripts/timelineChart.ts`
+  (`setupTimelineChart()`) only handles selection/paging, same `setupX()`-export-plus-embedded-JSON
+  pattern as the map island; the per-month piece data is embedded as a `<script
+  type="application/json">` tag keyed by month.
 
 ## Tags
 
@@ -685,7 +721,7 @@ following the same rule: never clobber a value the owner already set on purpose.
 **"Phases"**: not a stored field. Derived automatically by classifying each piece's medium tags into
 rough groups ("dry" — pencil, ink — vs "wet" — watercolor, gouache, oil, acrylic) and charting density
 over `date` — see the Timeline section above for how this is actually surfaced (an interactive
-scrubber colored by this classification, not a static chart).
+activity bar chart stacked by this classification).
 
 ## Open items (deliberately deferred)
 

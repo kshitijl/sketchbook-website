@@ -49,49 +49,79 @@ const maxTagCount = tagFrequency[0]?.count ?? 1;
 // this tag.
 const piecesJson = JSON.stringify(data.pieces).replace(/</g, '\\u003c');
 
-// Timeline scrubber: one step per month (not per piece — a slider can't cleanly pick out a single
-// piece from a whole collection, and the point is coarse "roughly when" scrubbing, not fine motor
-// precision), oldest-first so it reads left-to-right like a normal timeline. Each month also
-// tracks a dry/wet-media count so the scrubber's own track can be colored by what was being made
-// then — "he was doing a lot of gouache in this stretch" should be visible before you even touch it.
-const byMonth = new Map<string, { pieces: Piece[]; dry: number; wet: number; unclassified: number }>();
+// Timeline: an activity bar chart, one bar per month across the whole span — bar height is how
+// many pieces that month, each bar stacked by medium (dry/wet/other) so you can read both *how
+// much* and *what kind* of work at a glance. Empty months are kept as gaps (an empty bar) rather
+// than skipped, so quiet stretches actually show up instead of the axis silently compressing time.
+// Clicking a bar shows that month's pieces in the gallery frame below (setupTimelineChart).
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+	'July', 'August', 'September', 'October', 'November', 'December'];
+
+// Every "YYYY-MM" from start to end inclusive, so the x-axis is continuous in time.
+function monthsBetween(start: string, end: string): string[] {
+	const result: string[] = [];
+	let [y, m] = start.split('-').map(Number);
+	const [ey, em] = end.split('-').map(Number);
+	while (y < ey || (y === ey && m <= em)) {
+		result.push(`${y}-${String(m).padStart(2, '0')}`);
+		if (++m > 12) { m = 1; y++; }
+	}
+	return result;
+}
+
+const monthBuckets = new Map<string, { pieces: Piece[]; dry: number; wet: number; other: number }>();
 for (const piece of allByDate) {
 	const month = piece.date.slice(0, 7); // "YYYY-MM"
-	const bucket = byMonth.get(month) ?? { pieces: [], dry: 0, wet: 0, unclassified: 0 };
+	const bucket = monthBuckets.get(month) ?? { pieces: [], dry: 0, wet: 0, other: 0 };
 	bucket.pieces.push(piece);
-	bucket[classifyMedium(piece.tags)] += 1;
-	byMonth.set(month, bucket);
+	const group = classifyMedium(piece.tags); // 'dry' | 'wet' | 'unclassified'
+	bucket[group === 'unclassified' ? 'other' : group] += 1;
+	monthBuckets.set(month, bucket);
 }
-const months = [...byMonth.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
 
-// A dry-media-heavy month leans toward this gray-brown, a wet-media-heavy month toward this blue —
-// plain linear interpolation between the two, no per-medium (watercolor vs oil vs gouache) detail,
-// reusing the same dry/wet split classifyMedium() already provides everywhere else.
-function monthColor(counts: { dry: number; wet: number; unclassified: number }): string {
-	const total = counts.dry + counts.wet + counts.unclassified || 1;
-	const wetRatio = counts.wet / total;
-	const r = Math.round(168 - wetRatio * 100);
-	const g = Math.round(160 - wetRatio * 80);
-	const b = Math.round(150 + wetRatio * 105);
-	return `rgb(${r},${g},${b})`;
-}
-const bandWidth = 100 / (months.length || 1);
-const timelineGradient = months
-	.map(([, counts], i) => {
-		const color = monthColor(counts);
-		return `${color} ${(i * bandWidth).toFixed(2)}%, ${color} ${((i + 1) * bandWidth).toFixed(2)}%`;
-	})
-	.join(', ');
+const presentMonths = [...monthBuckets.keys()].sort();
+const monthKeys = presentMonths.length
+	? monthsBetween(presentMonths[0], presentMonths[presentMonths.length - 1])
+	: [];
+const maxMonthCount = Math.max(1, ...[...monthBuckets.values()].map((b) => b.pieces.length));
 
+// Fixed pixel height for the tallest bar; every segment scales to it. Kept in the frontmatter (not
+// CSS) because the segment heights are computed here per month and handed to the markup directly.
+const CHART_H = 160;
+const bars = monthKeys.map((month) => {
+	const bucket = monthBuckets.get(month);
+	const total = bucket?.pieces.length ?? 0;
+	const [y, m] = month.split('-').map(Number);
+	const scale = CHART_H / maxMonthCount;
+	// Stacked bottom-to-top; only non-zero segments so the 2px flex gap never draws phantom lines.
+	const segs = bucket
+		? [
+			{ cls: 'seg-wet', px: bucket.wet * scale },
+			{ cls: 'seg-dry', px: bucket.dry * scale },
+			{ cls: 'seg-other', px: bucket.other * scale }
+		].filter((s) => s.px > 0)
+		: [];
+	return { month, total, year: y, isYearStart: m === 1, label: `${MONTH_NAMES[m - 1]} ${y}`, segs };
+});
+
+// Per-month piece data for the gallery frame, keyed by month — only the non-empty months need it.
 // Escape `<` so a stray `</script>` inside a title/notes field can't break out of this tag.
 const timelineJson = JSON.stringify(
-	months.map(([month, bucket]) => ({
-		month,
-		pieces: bucket.pieces.map((p) => {
-			const asset = getPrimaryAsset(p);
-			return { id: p.id, title: p.title, date: p.date, imageUrl: asset ? imageUrl(asset.r2Key, 'big') : '' };
-		})
-	}))
+	Object.fromEntries(
+		monthKeys
+			.filter((month) => monthBuckets.has(month))
+			.map((month) => {
+				const bucket = monthBuckets.get(month)!;
+				const [y, m] = month.split('-').map(Number);
+				return [month, {
+					label: `${MONTH_NAMES[m - 1]} ${y}`,
+					pieces: bucket.pieces.map((p) => {
+						const asset = getPrimaryAsset(p);
+						return { id: p.id, title: p.title, date: p.date, imageUrl: asset ? imageUrl(asset, 'card') : '' };
+					})
+				}];
+			})
+	)
 ).replace(/</g, '\\u003c');
 ---
 
@@ -134,20 +164,36 @@ const timelineJson = JSON.stringify(
 		</>
 	)}
 
-	{months.length > 0 && (
+	{bars.length > 0 && (
 		<section>
 			<h2>Timeline</h2>
-			<p><em>Drag to scrub through time — the color shows dry vs. wet media in that stretch.</em></p>
-			<input
-				type="range"
-				id="timeline-range"
-				class="timeline-scrubber"
-				min="0"
-				max={months.length - 1}
-				step="1"
-				value={months.length - 1}
-				style={`--timeline-gradient: linear-gradient(to right, ${timelineGradient});`}
-			/>
+			<p><em>How much I've been making, month by month — click a bar to see that month's pieces.</em></p>
+			<div class="timeline-legend">
+				<span><i class="swatch seg-wet"></i>wet media</span>
+				<span><i class="swatch seg-dry"></i>dry media</span>
+				<span><i class="swatch seg-other"></i>other</span>
+			</div>
+			<div class="timeline-chart" id="timeline-chart" style={`--chart-h:${CHART_H}px;`}>
+				{bars.map((bar) => (
+					<button
+						class="timeline-bar"
+						data-month={bar.month}
+						disabled={bar.total === 0}
+						title={`${bar.label} · ${bar.total} ${bar.total === 1 ? 'piece' : 'pieces'}`}
+						aria-label={`${bar.label}, ${bar.total} ${bar.total === 1 ? 'piece' : 'pieces'}`}
+					>
+						{bar.segs.map((s) => (
+							<span class={`seg ${s.cls}`} style={`height:${s.px.toFixed(1)}px`}></span>
+						))}
+					</button>
+				))}
+			</div>
+			<div class="timeline-axis">
+				{bars.map((bar, i) => (
+					<span class="tick">{bar.isYearStart || i === 0 ? bar.year : ''}</span>
+				))}
+			</div>
+			<p class="timeline-month" id="timeline-month"></p>
 			<div class="timeline-gallery-frame">
 				<button id="timeline-prev" type="button" aria-label="Previous piece this month">‹</button>
 				<a id="timeline-piece-link" href="#">
@@ -208,7 +254,7 @@ const timelineJson = JSON.stringify(
 
 <script>
 	import { setupMap } from '../scripts/mapPage';
-	import { setupTimelineScrubber } from '../scripts/timelineScrubber';
+	import { setupTimelineChart } from '../scripts/timelineChart';
 	setupMap();
-	setupTimelineScrubber();
+	setupTimelineChart();
 </script>

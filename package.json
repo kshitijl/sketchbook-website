@@ -17,9 +17,11 @@
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.1.4",
+    "@types/pica": "^9.0.5",
     "astro": "^7.1.3",
     "leaflet": "^1.9.4",
     "leaflet.markercluster": "^1.5.3",
+    "pica": "^10.0.2",
     "wrangler": "^4.113.0"
   },
   "devDependencies": {

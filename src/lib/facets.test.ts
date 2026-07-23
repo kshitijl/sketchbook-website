@@ -73,8 +73,8 @@ describe('getPrimaryAsset / orderAssetsFinalFirst', () => {
 	it('prefers the final asset as primary, even if not first in the array', () => {
 		const piece = makePiece({
 			assets: [
-				{ id: 'a1', kind: 'reference-photo', r2Key: 'r1', width: 0, height: 0 },
-				{ id: 'a2', kind: 'final', r2Key: 'r2', width: 0, height: 0 }
+				{ id: 'a1', kind: 'reference-photo', r2Key: 'r1', width: 0, height: 0, sizes: { thumb: 't', card: 'c', big: 'b' } },
+				{ id: 'a2', kind: 'final', r2Key: 'r2', width: 0, height: 0, sizes: { thumb: 't', card: 'c', big: 'b' } }
 			]
 		});
 		expect(getPrimaryAsset(piece)?.id).toBe('a2');
@@ -82,7 +82,7 @@ describe('getPrimaryAsset / orderAssetsFinalFirst', () => {
 
 	it('falls back to the first asset when there is no final', () => {
 		const piece = makePiece({
-			assets: [{ id: 'a1', kind: 'setup', r2Key: 'r1', width: 0, height: 0 }]
+			assets: [{ id: 'a1', kind: 'setup', r2Key: 'r1', width: 0, height: 0, sizes: { thumb: 't', card: 'c', big: 'b' } }]
 		});
 		expect(getPrimaryAsset(piece)?.id).toBe('a1');
 	});
@@ -93,8 +93,8 @@ describe('getPrimaryAsset / orderAssetsFinalFirst', () => {
 
 	it('orders the final asset first without mutating the original array', () => {
 		const original = [
-			{ id: 'a1', kind: 'reference-photo' as const, r2Key: 'r1', width: 0, height: 0 },
-			{ id: 'a2', kind: 'final' as const, r2Key: 'r2', width: 0, height: 0 }
+			{ id: 'a1', kind: 'reference-photo' as const, r2Key: 'r1', width: 0, height: 0, sizes: { thumb: 't', card: 'c', big: 'b' } },
+			{ id: 'a2', kind: 'final' as const, r2Key: 'r2', width: 0, height: 0, sizes: { thumb: 't', card: 'c', big: 'b' } }
 		];
 		const ordered = orderAssetsFinalFirst(original);
 		expect(ordered.map((a) => a.id)).toEqual(['a2', 'a1']);
@@ -117,12 +117,12 @@ describe('getAssetsByKind', () => {
 		const p1 = makePiece({
 			id: 'p1',
 			date: '2020-01-01',
-			assets: [{ id: 'a1', kind: 'setup', r2Key: 'r1', width: 0, height: 0 }]
+			assets: [{ id: 'a1', kind: 'setup', r2Key: 'r1', width: 0, height: 0, sizes: { thumb: 't', card: 'c', big: 'b' } }]
 		});
 		const p2 = makePiece({
 			id: 'p2',
 			date: '2023-01-01',
-			assets: [{ id: 'a2', kind: 'setup', r2Key: 'r2', width: 0, height: 0 }]
+			assets: [{ id: 'a2', kind: 'setup', r2Key: 'r2', width: 0, height: 0, sizes: { thumb: 't', card: 'c', big: 'b' } }]
 		});
 		const result = getAssetsByKind(makeData([p1, p2]), 'setup');
 		expect(result.map((r) => r.piece.id)).toEqual(['p2', 'p1']);

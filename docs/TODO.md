@@ -1034,3 +1034,47 @@ before/after test more rigorously and found the first pass had been less airtigh
 
 ## Phase 7 — Content migration
 Owner is doing this manually via `/admin/new`, not an agent task.
+
+## Timeline data-viz rebuild + oversized-image handling (2026-07-23)
+- [x] **Timeline widget rebuilt** from a meaningless range-slider-with-a-gradient-track into an
+      activity bar chart (owner: "it doesn't say the month or year, it just doesn't seem to mean
+      anything"). One bar per month across the whole span, height = pieces that month, stacked by
+      medium (dry/wet/other via `classifyMedium()`), year labels on the axis, click a bar to see
+      that month's pieces in the (kept) gallery frame. Empty months stay as gaps. Validated the
+      wet/dry categorical colors with the dataviz skill's palette checker (light surface only — the
+      site is light-only). `timelineScrubber.ts` → `timelineChart.ts`; see docs/architecture.md's
+      Timeline section.
+- [x] **Root cause of slow gallery images: the Images binding's `.input()` caps at 20MB.** Any
+      original over 20MB throws in `img/[...key].ts`, the fallback serves the full original for every
+      size. ~15 artwork scans were already over the limit. Fix = preservation-master + access-copy:
+      keep the original (`r2Key`) untouched, generate a downscaled WebP `displayKey` (browser-side,
+      `pieceForm.ts`, since the Worker can't shrink >20MB either), display `assetDisplayKey()`. New
+      `Asset.displayKey?`; both admin upload handlers store the copy; all display call sites updated;
+      full-res link + backups still use the master. See docs/architecture.md's Images section.
+- [x] ~~`scripts/backfill-display-copies.mjs`~~ — superseded (see below).
+- [ ] Browser-side generation still needs a real in-browser upload test (see below).
+
+## Dropped Cloudflare Images binding: pre-generate all sizes at upload (2026-07-23, unattended)
+Owner asked to stop using Cloudflare's Images product entirely (20MB silent-fail limit, no quality
+control → 2.6MB "big", on-demand complexity) and instead pre-generate thumb/card/big at upload as
+plain immutable R2 files. Supersedes the `displayKey` access-copy approach from earlier the same day.
+- [x] `Asset.sizes: {thumb,card,big}` — **required, no fallback** (owner: "make illegal states
+      unrepresentable... if it's not there that's a bug"). `displayKey` removed. `imageUrl(asset,size)`
+      indexes `sizes` directly; `/img/[...key].ts` is now a pure passthrough (binding gone).
+- [x] Upload generates the 3 WebP variants client-side (`makeVariants()` in `pieceForm.ts`), loaded
+      into hidden inputs via DataTransfer; Save disabled (ref-counted) until ready; server refuses to
+      create an asset without all 3 variant files (`getVariantFiles()`). All ~11 display call sites,
+      both admin handlers, the `?added=1` panel, and docs updated.
+- [x] `scripts/backfill-image-variants.mjs` (sharp) — generate all 3 variants for every existing
+      asset; snapshot first, resumable, exits non-zero until coverage is 100%. Run BEFORE deploying.
+- [x] **Library decision for `makeVariants()`**: shipped on **`<canvas>`** (zero-dep, works
+      everywhere, no WASM load) rather than wasm-vips, specifically because this was an unattended
+      rollout with no browser to verify a WASM bundle — a canvas failure can't happen, a wasm-vips
+      bundling/runtime failure would break every upload. wasm-vips (Node-verified: card 114KB/big
+      350KB) or Pica is a ready upgrade, isolated to that one function — do it once it can be tested
+      on a real device (esp. iOS 16.4+). Backfill uses sharp (libvips), so existing images are
+      top-quality; only *future* uploads are canvas-quality until the upgrade.
+- [ ] **Not yet browser-verified**: the client `makeVariants()` (createImageBitmap/canvas/DataTransfer)
+      — verified via typecheck/build + the server accepts its output + negative (missing-variant)
+      rejection, but not by an actual in-browser upload. Test a real upload (ideally from the phone)
+      before trusting new-piece uploads; if the phone can't run it, that's the cue to swap in wasm-vips.

@@ -30,7 +30,7 @@ const justAdded = Astro.url.searchParams.get('added') === '1';
 // Open Graph needs an absolute image URL — derived from the current request's own origin so it's
 // correct whether this is served from workers.dev or the eventual custom domain.
 const primaryAsset = piece ? getPrimaryAsset(piece) : undefined;
-const ogImage = primaryAsset ? new URL(imageUrl(primaryAsset.r2Key, 'card'), Astro.url).toString() : undefined;
+const ogImage = primaryAsset ? new URL(imageUrl(primaryAsset, 'card'), Astro.url).toString() : undefined;
 const ogDescription = piece
 	? piece.notes || `${piece.date} · ${piece.stage} · ${piece.location.placeName}`
 	: undefined;
@@ -54,7 +54,7 @@ const ogDescription = piece
 			{orderedAssets.map((asset) => (
 				<figure style="margin:0 0 1rem 0;">
 					<img
-						src={imageUrl(asset.r2Key, 'big')}
+						src={imageUrl(asset, 'big')}
 						alt={asset.caption || `${piece.title} (${asset.kind})`}
 						width={asset.width || undefined}
 						height={asset.height || undefined}
@@ -65,12 +65,19 @@ const ogDescription = piece
 						{' — '}<a href={originalImageUrl(asset.r2Key)}>View full resolution</a>
 					</figcaption>
 					{justAdded && (
-						<p style="display:flex; gap:0.5rem; align-items:flex-end; margin:0.35rem 0 0;">
-							<span style="font-size:0.7rem; color:var(--text-muted);">thumb:</span>
-							<img src={imageUrl(asset.r2Key, 'thumb')} alt="thumb size check" style="max-width:120px; max-height:120px;" />
-							<span style="font-size:0.7rem; color:var(--text-muted);">card:</span>
-							<img src={imageUrl(asset.r2Key, 'card')} alt="card size check" style="max-width:200px; max-height:200px;" />
-						</p>
+						<div class="added-check">
+							{[
+								{ label: 'original', url: originalImageUrl(asset.r2Key) },
+								{ label: 'big', url: imageUrl(asset, 'big') },
+								{ label: 'card', url: imageUrl(asset, 'card') },
+								{ label: 'thumb', url: imageUrl(asset, 'thumb') }
+							].map((v) => (
+								<figure class="added-variant">
+									<img src={v.url} alt={`${v.label} check`} loading="eager" />
+									<figcaption>{v.label}: <span class="added-size" data-size-for={v.url}>measuring…</span></figcaption>
+								</figure>
+							))}
+						</div>
 					)}
 				</figure>
 			))}
@@ -81,3 +88,67 @@ const ogDescription = piece
 		<p>Piece not found.</p>
 	)}
 </Base>
+
+{justAdded && (
+	<style>
+		.added-check {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.75rem;
+			margin: 0.5rem 0 0;
+			padding: 0.5rem;
+			border: 1px dashed var(--text-muted);
+		}
+		.added-variant {
+			margin: 0;
+			max-width: 160px;
+		}
+		.added-variant img {
+			display: block;
+			max-width: 160px;
+			max-height: 160px;
+			width: auto;
+			height: auto;
+		}
+		.added-variant figcaption {
+			font-family: var(--mono);
+			font-size: 0.65rem;
+			color: var(--text-muted);
+			margin-top: 0.2rem;
+			word-break: break-word;
+		}
+	</style>
+	<script is:inline>
+		// Post-add diagnostic: fill in each variant's actual delivered size + content-type so a bad
+		// upload (e.g. an oversized original serving as image/png instead of a resized webp) is
+		// obvious at a glance. Reads headers only, then cancels the body — the <img> already loads it.
+		(function () {
+			function fmt(n) {
+				if (n >= 1048576) return (n / 1048576).toFixed(2) + ' MB';
+				if (n >= 1024) return (n / 1024).toFixed(1) + ' KB';
+				return n + ' B';
+			}
+			document.querySelectorAll('.added-size').forEach(function (el) {
+				var url = el.getAttribute('data-size-for');
+				fetch(url)
+					.then(function (res) {
+						var ct = res.headers.get('content-type') || '?';
+						var len = res.headers.get('content-length');
+						if (len) {
+							// Header present (always the case in production) — read it and skip the body.
+							if (res.body) res.body.cancel();
+							el.textContent = fmt(Number(len)) + ' · ' + ct;
+						} else {
+							// No content-length (e.g. local dev's streamed resizes) — measure the body.
+							return res.blob().then(function (b) {
+								el.textContent = fmt(b.size) + ' · ' + ct;
+							});
+						}
+					})
+					.catch(function () {
+						el.textContent = 'failed to load';
+					});
+			});
+		})();
+	</script>
+)}

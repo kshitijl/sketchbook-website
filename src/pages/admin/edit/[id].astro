@@ -6,7 +6,7 @@ import { getPieceById, getTagFrequency } from '../../../lib/facets';
 import { generateAssetId, buildAssetKey } from '../../../lib/ids';
 import { getImageDimensions } from '../../../lib/imageDimensions';
 import { ASSET_KIND_LABELS, ASSET_KINDS } from '../../../lib/assetKinds';
-import { imageUrl } from '../../../lib/images';
+import { getVariantFiles, imageUrl } from '../../../lib/images';
 import { purgePages } from '../../../lib/purge';
 import { isAuthorizedAdminRequest } from '../../../lib/adminGuard';
 import { backupAsset, backupPieceData, logBackupEvent } from '../../../lib/backup';
@@ -121,6 +121,20 @@ if (piece && Astro.request.method === 'POST') {
 		}
 	}
 
+	// Every newly-uploaded image must arrive with its three client-generated WebP variants (see
+	// pieceForm.ts) — a hard error rather than a silent master-only record (e.g. if JS didn't run).
+	const finalFileForCheck = formData.get('asset_final');
+	if (finalFileForCheck instanceof File && finalFileForCheck.size > 0 && !getVariantFiles(formData, (s) => `asset_final_${s}`)) {
+		errors.push('Resized image versions are missing — is JavaScript enabled? They are generated in the browser before upload.');
+	}
+	const extraForCheck = formData.getAll('asset_extra');
+	for (let i = 0; i < extraForCheck.length; i++) {
+		const f = extraForCheck[i];
+		if (f instanceof File && f.size > 0 && !getVariantFiles(formData, (s) => `asset_extra_${s}_${i}`)) {
+			errors.push(`Additional photo #${i + 1}: resized versions are missing (is JavaScript enabled?).`);
+		}
+	}
+
 	if (errors.length === 0) {
 		const tags = values.tags
 			.split(',')
@@ -133,7 +147,7 @@ if (piece && Astro.request.method === 'POST') {
 		type AssetUpdate =
 			| { action: 'remove'; assetId: string }
 			| { action: 'kind'; assetId: string; kind: AssetKind }
-			| { action: 'add'; kind: AssetKind; assetId: string; r2Key: string; width: number; height: number };
+			| { action: 'add'; kind: AssetKind; assetId: string; r2Key: string; sizes: { thumb: string; card: string; big: string }; width: number; height: number };
 		const assetUpdates: AssetUpdate[] = [];
 
 		for (const asset of piece.assets) {
@@ -153,7 +167,7 @@ if (piece && Astro.request.method === 'POST') {
 		const existingAssetIds = new Set(piece.assets.map((a) => a.id));
 		const pieceId = piece.id;
 
-		async function uploadAsset(file: File, kind: AssetKind) {
+		async function uploadAsset(file: File, kind: AssetKind, variants: { thumb: File; card: File; big: File }) {
 			const assetId = generateAssetId(existingAssetIds);
 			existingAssetIds.add(assetId);
 			const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
@@ -163,19 +177,27 @@ if (piece && Astro.request.method === 'POST') {
 			const contentType = file.type || 'application/octet-stream';
 			await env.ART_BUCKET.put(r2Key, buffer, { httpMetadata: { contentType } });
 			// Best-effort: a backup failure must never break the actual upload it's shadowing,
-			// but it should still show up in the visible log rather than being fully silent.
+			// but it should still show up in the visible log rather than being fully silent. Only the
+			// master is backed up — the variants below are regenerable derivatives.
 			try {
 				await backupAsset(env.BACKUP_BUCKET, r2Key, buffer, contentType);
 				imagesBackedUp++;
 			} catch (err) {
 				backupErrors.push(`Failed to back up ${r2Key}: ${String(err)}`);
 			}
-			assetUpdates.push({ action: 'add', kind, assetId, r2Key, width: dims?.width ?? 0, height: dims?.height ?? 0 });
+			// Store the three pre-generated WebP variants (generated client-side, see pieceForm.ts).
+			const sizes = { thumb: '', card: '', big: '' };
+			for (const size of ['thumb', 'card', 'big'] as const) {
+				const key = buildAssetKey(pieceId, `${assetId}-${size}`, 'webp');
+				await env.ART_BUCKET.put(key, await variants[size].arrayBuffer(), { httpMetadata: { contentType: 'image/webp' } });
+				sizes[size] = key;
+			}
+			assetUpdates.push({ action: 'add', kind, assetId, r2Key, sizes, width: dims?.width ?? 0, height: dims?.height ?? 0 });
 		}
 
 		const finalFile = formData.get('asset_final');
 		if (finalFile instanceof File && finalFile.size > 0) {
-			await uploadAsset(finalFile, 'final');
+			await uploadAsset(finalFile, 'final', getVariantFiles(formData, (s) => `asset_final_${s}`)!);
 		}
 
 		// Each newly-added "additional photo" is tagged right at selection time — a
@@ -192,7 +214,7 @@ if (piece && Astro.request.method === 'POST') {
 				typeof kindValue === 'string' && (ASSET_KINDS as string[]).includes(kindValue)
 					? (kindValue as AssetKind)
 					: 'unsorted';
-			await uploadAsset(file, kind);
+			await uploadAsset(file, kind, getVariantFiles(formData, (s) => `asset_extra_${s}_${i}`)!);
 		}
 
 		const saved = await updatePieces(env.ART_BUCKET, (d) => {
@@ -222,6 +244,7 @@ if (piece && Astro.request.method === 'POST') {
 						id: update.assetId,
 						kind: update.kind,
 						r2Key: update.r2Key,
+						sizes: update.sizes,
 						width: update.width,
 						height: update.height
 					});
@@ -326,7 +349,7 @@ if (piece && Astro.request.method === 'POST') {
 								{finalAsset && (
 									<div style="margin:0.5rem 0;">
 										<img
-											src={imageUrl(finalAsset.r2Key, 'thumb')}
+											src={imageUrl(finalAsset, 'thumb')}
 											alt={ASSET_KIND_LABELS.final}
 											style="max-width:200px; max-height:200px; display:block;"
 										/>
@@ -344,6 +367,10 @@ if (piece && Astro.request.method === 'POST') {
 										accept="image/*"
 									/>
 								</label>
+								<!-- Pre-generated WebP variants, filled client-side (pieceForm.ts). -->
+								<input type="file" class="final-variant" data-size="thumb" name="asset_final_thumb" hidden />
+								<input type="file" class="final-variant" data-size="card" name="asset_final_card" hidden />
+								<input type="file" class="final-variant" data-size="big" name="asset_final_big" hidden />
 								<br />
 								<img id="preview-final" alt="New preview" style="display:none; max-width:200px; max-height:200px; margin-top:0.5rem;" />
 							</>
@@ -359,7 +386,7 @@ if (piece && Astro.request.method === 'POST') {
 						.map((asset) => (
 							<div style="margin:0.75rem 0; display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
 								<img
-									src={imageUrl(asset.r2Key, 'thumb')}
+									src={imageUrl(asset, 'thumb')}
 									alt={ASSET_KIND_LABELS[asset.kind]}
 									style="max-width:120px; max-height:120px; display:block;"
 								/>

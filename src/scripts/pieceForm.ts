@@ -8,6 +8,13 @@ import 'leaflet/dist/leaflet.css';
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png?url';
 import markerIcon from 'leaflet/dist/images/marker-icon.png?url';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png?url';
+import Pica from 'pica';
+import { SIZE_WIDTHS } from '../lib/images';
+
+// One shared instance. Pica does Lanczos downscaling (sharper than a plain canvas draw) and tiles
+// large sources internally, so it avoids Safari's canvas-area limit on big scans. No SharedArrayBuffer
+// / cross-origin isolation needed (unlike wasm-vips), so it doesn't affect the admin map/geocoding.
+const pica = Pica();
 
 delete (L.Icon.Default.prototype as { _getIconUrl?: unknown })._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -49,7 +56,89 @@ export function setupPieceForm(options: PieceFormOptions = {}): void {
 	setupAssetPreviews();
 	setupExtraAssetTagging();
 	setupFilenameSuggestions();
+	setupFinalVariants();
 	setupTagChips();
+}
+
+const VARIANT_SIZES = ['thumb', 'card', 'big'] as const;
+type VariantSize = (typeof VARIANT_SIZES)[number];
+
+/**
+ * Generate the three pre-generated WebP display variants for an uploaded image, entirely in the
+ * browser — the site no longer resizes on the fly, so every uploaded image must arrive with these.
+ * Decodes with EXIF orientation applied, downscales each size with Pica (Lanczos, tiled so large
+ * scans don't hit Safari's canvas-area limit), and encodes WebP. Returns null on any failure (the
+ * server then rejects the upload rather than storing a variant-less record). Isolated here so the
+ * resize/encode engine stays swappable.
+ */
+async function makeVariants(file: File): Promise<Record<VariantSize, File> | null> {
+	try {
+		// `imageOrientation: 'from-image'` applies the photo's EXIF orientation (phone photos are often
+		// stored landscape with a "rotate 90°" tag) so the variant pixels come out the right way up —
+		// the old Cloudflare Images binding did this automatically; a plain decode would not.
+		const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+		const out = {} as Record<VariantSize, File>;
+		for (const size of VARIANT_SIZES) {
+			const scale = Math.min(1, SIZE_WIDTHS[size] / bitmap.width); // cap width, never enlarge
+			const canvas = document.createElement('canvas');
+			canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+			canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+			await pica.resize(bitmap, canvas); // Lanczos downscale into the target-sized canvas
+			const blob = await pica.toBlob(canvas, 'image/webp', 0.82);
+			out[size] = new File([blob], `${size}.webp`, { type: 'image/webp' });
+		}
+		bitmap.close();
+		return out;
+	} catch {
+		return null; // unsupported format, out of memory, etc.
+	}
+}
+
+/** Load a generated File into a hidden <input type="file"> (empty if null) so a normal multipart
+ * form submit carries it — no switch to a fetch-based submit needed. */
+function setFileInput(input: HTMLInputElement, file: File | null): void {
+	const dt = new DataTransfer();
+	if (file) dt.items.add(file);
+	input.files = dt.files;
+}
+
+// Disable Save while any variant generation is in flight (final image or extras), so you can't
+// submit before the WebP variants are ready — which would fail server validation. Ref-counted so
+// several concurrent jobs (e.g. multiple extra photos) all have to finish first.
+let pendingVariantJobs = 0;
+async function withVariantJob(fn: () => Promise<void>): Promise<void> {
+	pendingVariantJobs++; // runs synchronously before the first await — Save disables immediately
+	updateSubmitDisabled();
+	try {
+		await fn();
+	} finally {
+		pendingVariantJobs--;
+		updateSubmitDisabled();
+	}
+}
+function updateSubmitDisabled(): void {
+	const btn = document.querySelector<HTMLButtonElement>('form button[type="submit"]');
+	if (btn) btn.disabled = pendingVariantJobs > 0;
+}
+
+/** On selecting the main image, generate its three variants into the hidden `asset_final_<size>`
+ * inputs. */
+function setupFinalVariants(): void {
+	const finalInput = document.getElementById('finalImageInput') as HTMLInputElement | null;
+	if (!finalInput) return;
+	const form = finalInput.closest('form');
+	const variantInputs = form ? [...form.querySelectorAll<HTMLInputElement>('input.final-variant')] : [];
+	if (variantInputs.length === 0) return;
+	finalInput.addEventListener('change', () =>
+		withVariantJob(async () => {
+			const file = finalInput.files?.[0];
+			const variants = file ? await makeVariants(file) : null;
+			for (const input of variantInputs) {
+				const size = input.dataset.size as VariantSize;
+				setFileInput(input, variants ? variants[size] : null);
+			}
+		})
+	);
 }
 
 function setupLocationPicker(options: PieceFormOptions): void {
@@ -248,8 +337,23 @@ function setupExtraAssetTagging(): void {
 				select.appendChild(option);
 			}
 
+			// Three hidden variant inputs for this file, index-aligned to its slot, filled once the
+			// browser finishes generating the WebP variants (Save stays disabled until then).
+			const variantInputs = VARIANT_SIZES.map((size) => {
+				const inp = document.createElement('input');
+				inp.type = 'file';
+				inp.name = `asset_extra_${size}_${i}`;
+				inp.style.display = 'none';
+				return inp;
+			});
+			withVariantJob(async () => {
+				const variants = await makeVariants(file);
+				variantInputs.forEach((inp, si) => setFileInput(inp, variants ? variants[VARIANT_SIZES[si]] : null));
+			});
+
 			row.appendChild(img);
 			row.appendChild(select);
+			for (const inp of variantInputs) row.appendChild(inp);
 			list.appendChild(row);
 		});
 	});

@@ -21,7 +21,7 @@ import { randomBytes } from 'node:crypto';
 const PURGE_URL = 'https://klauria.art/deploy-purge';
 // Observed live: a secret rotation can occasionally take longer than 20s to fully propagate
 // before the new token is recognized everywhere — 8 attempts × 5s covers that with margin.
-const MAX_ATTEMPTS = 8;
+const MAX_ATTEMPTS = Number(process.env.PURGE_MAX_ATTEMPTS) || 8;
 const RETRY_DELAY_MS = 5000;
 const full = process.argv.includes('--full');
 
