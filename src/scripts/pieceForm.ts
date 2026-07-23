@@ -8,7 +8,7 @@ import 'leaflet/dist/leaflet.css';
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png?url';
 import markerIcon from 'leaflet/dist/images/marker-icon.png?url';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png?url';
-import heic2any from 'heic2any';
+import { heicTo, isHeic } from 'heic-to';
 import Pica from 'pica';
 import { SIZE_WIDTHS } from '../lib/images';
 
@@ -109,11 +109,18 @@ function setupDragAndDrop(): void {
 const VARIANT_SIZES = ['thumb', 'card', 'big'] as const;
 type VariantSize = (typeof VARIANT_SIZES)[number];
 
-/** iPhones save/share photos as HEIC by default, which `createImageBitmap` can't decode in any
- * browser but Safari — checked by extension too since a HEIC file's `type` sometimes comes back
- * empty depending on how it reached the browser. */
-function isHeic(file: File): boolean {
-	return /^image\/hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name);
+/** A raw `URL.createObjectURL(file)` is enough for an `<img>` preview of any format the browser
+ * can natively decode — but that's not HEIC outside Safari (iPhones save/share photos as HEIC by
+ * default), so it needs the same client-side conversion as the real resize pipeline (see
+ * `makeVariants`) just to be previewable at all. */
+async function previewUrlFor(file: File): Promise<string> {
+	if (!(await isHeic(file))) return URL.createObjectURL(file);
+	try {
+		return URL.createObjectURL(await heicTo({ blob: file, type: 'image/jpeg' }));
+	} catch (err) {
+		console.error('HEIC preview conversion failed:', err);
+		return URL.createObjectURL(file); // best effort — browser will show a broken image
+	}
 }
 
 /**
@@ -126,16 +133,17 @@ function isHeic(file: File): boolean {
  */
 async function makeVariants(file: File): Promise<Record<VariantSize, File> | null> {
 	try {
-		// HEIC needs a WASM decode to a browser-native format before `createImageBitmap` can touch
-		// it. libheif applies the container's orientation during this decode, so the resulting JPEG
-		// is already right-side up — no separate EXIF-orientation step needed for it.
-		// `multiple` isn't passed, so heic2any always resolves a single Blob here, never the array
-		// variant it returns for multi-image HEIC containers.
-		const source = isHeic(file) ? ((await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 })) as Blob) : file;
-		// `imageOrientation: 'from-image'` applies the photo's EXIF orientation (phone photos are often
-		// stored landscape with a "rotate 90°" tag) so the variant pixels come out the right way up —
-		// the old Cloudflare Images binding did this automatically; a plain decode would not.
-		const bitmap = await createImageBitmap(source, { imageOrientation: 'from-image' });
+		// HEIC needs a WASM decode to get a bitmap at all — `createImageBitmap` can't read it in
+		// any browser but Safari. libheif applies the container's own orientation transform during
+		// that decode, so the bitmap comes out right-side up without a separate orientation step.
+		//
+		// `imageOrientation: 'from-image'` on the non-HEIC path applies the photo's EXIF orientation
+		// (phone photos are often stored landscape with a "rotate 90°" tag) so the variant pixels
+		// come out the right way up — the old Cloudflare Images binding did this automatically; a
+		// plain decode would not.
+		const bitmap = (await isHeic(file))
+			? await heicTo({ blob: file, type: 'bitmap' })
+			: await createImageBitmap(file, { imageOrientation: 'from-image' });
 		const out = {} as Record<VariantSize, File>;
 		for (const size of VARIANT_SIZES) {
 			const scale = Math.min(1, SIZE_WIDTHS[size] / bitmap.width); // cap width, never enlarge
@@ -148,8 +156,9 @@ async function makeVariants(file: File): Promise<Record<VariantSize, File> | nul
 		}
 		bitmap.close();
 		return out;
-	} catch {
-		return null; // unsupported format, out of memory, etc.
+	} catch (err) {
+		console.error('Image resize failed:', err); // unsupported format, out of memory, etc.
+		return null;
 	}
 }
 
@@ -375,8 +384,10 @@ function setupAssetPreviews(): void {
 				preview.style.display = 'none';
 				return;
 			}
-			preview.src = URL.createObjectURL(file);
-			preview.style.display = 'block';
+			previewUrlFor(file).then((url) => {
+				preview.src = url;
+				preview.style.display = 'block';
+			});
 		});
 	});
 }
@@ -430,9 +441,11 @@ function setupExtraAssetTagging(): void {
 			row.style.cssText = 'display:flex; align-items:center; gap:0.75rem; margin:0.5rem 0;';
 
 			const img = document.createElement('img');
-			img.src = URL.createObjectURL(file);
 			img.alt = file.name;
 			img.style.cssText = 'max-width:100px; max-height:100px; display:block;';
+			previewUrlFor(file).then((url) => {
+				img.src = url;
+			});
 
 			const select = document.createElement('select');
 			select.name = `kind_extra_${i}`;
