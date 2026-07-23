@@ -22,7 +22,9 @@ const { pieces, label } = Astro.props;
 			return (
 				<li class="carousel-slide">
 					<a href={`/piece/${piece.id}`}>
-						{asset && <img src={imageUrl(asset, 'big')} alt={piece.title} loading={i === 0 ? 'eager' : 'lazy'} />}
+						<span class="carousel-image">
+							{asset && <img src={imageUrl(asset, 'big')} alt={piece.title} loading={i === 0 ? 'eager' : 'lazy'} />}
+						</span>
 						<span class="carousel-caption">
 							<span class="carousel-title">{piece.title} — {piece.date}</span>
 							<span class="carousel-hint">
