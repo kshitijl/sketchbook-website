@@ -478,6 +478,13 @@ correcting once:
   keeps appearing between the three "explore by X" tools rather than being front-loaded once,
   matching explicit feedback: "a user comes in and it's like they're surrounded by my images, and
   then there's ways for them to enter in and see more."
+- **Each gallery batch gets a small, quiet label** ("My favorite pieces I've made" / "Some recent
+  pieces" / "Some random pieces") — `.section-label`, the same muted mono/uppercase voice as
+  `.piece-grid .caption`, deliberately not a heavy `<h2>` like Map/Timeline/Tags get, since these
+  batches are still just "more art," not another explore-by-X tool. Every batch of each kind gets
+  its own label (both `recentA`/`recentB`, both `rediscoverA`/`rediscoverB`), not just the first —
+  they're spaced apart by Map/Timeline/Tags rather than sitting adjacent, so a viewer scrolling past
+  the second "recent" batch later on the page has nothing else tying it back to the first.
 
 ## Admin form conveniences
 
@@ -546,6 +553,16 @@ following the same rule: never clobber a value the owner already set on purpose.
   then shows a `← Add another piece` link back to `/admin/new` above the title, since adding one
   piece is usually immediately followed by adding another. Nothing else ever links to a piece with
   `?added=1`, so this never appears for other viewers.
+- **The same `?added=1` view also visibly renders every asset's `thumb`/`card` size**, right under
+  each image, not just the `big` size the page shows normally. Two reasons this exists: those two
+  sizes are otherwise only ever requested from `/admin` (`thumb`) or a grid page (`card`) — a
+  brand-new upload could sit un-cached for a while otherwise, even though a resized image is cached
+  effectively forever once served (`Cache-Control: public, max-age=31536000, immutable`, and the
+  edge cache is tiered, so one request warms it everywhere). More importantly, it surfaces a broken
+  resize (see the Images section's "error-status Images response" bug) immediately, as a visibly
+  broken image right where you land after uploading, rather than something only discoverable later
+  by clicking a tag or browsing a grid. Deliberately rendered, not hidden/prefetched — the point was
+  to *see* it, not just warm the cache silently.
 
 ## Page inventory
 

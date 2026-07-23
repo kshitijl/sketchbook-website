@@ -18,9 +18,13 @@ if (!piece) {
 
 const orderedAssets = piece ? orderAssetsFinalFirst(piece.assets) : [];
 
-// Only ever true right after /admin/new's own redirect — a shortcut for "add another piece", since
-// that's usually exactly what happens next after adding one. Never shown to other viewers, since
-// nothing else ever links here with this param.
+// Only ever true right after /admin/new's own redirect. Does two things, both admin-only and
+// never shown to other viewers (nothing else ever links here with this param): shows an "add
+// another piece" shortcut, and visibly renders every asset's thumb/card size right here — the
+// only page that would otherwise ever request those sizes for a brand-new upload is /admin, which
+// isn't necessarily the very next page visited. This surfaces a broken resize (see docs/TODO.md's
+// "Bug: an error-status Images response..." entry) immediately, as a visibly broken image, rather
+// than relying on stumbling across it later.
 const justAdded = Astro.url.searchParams.get('added') === '1';
 
 // Open Graph needs an absolute image URL — derived from the current request's own origin so it's
@@ -60,6 +64,14 @@ const ogDescription = piece
 						{asset.kind}{asset.caption ? ` — ${asset.caption}` : ''}
 						{' — '}<a href={originalImageUrl(asset.r2Key)}>View full resolution</a>
 					</figcaption>
+					{justAdded && (
+						<p style="display:flex; gap:0.5rem; align-items:flex-end; margin:0.35rem 0 0;">
+							<span style="font-size:0.7rem; color:var(--text-muted);">thumb:</span>
+							<img src={imageUrl(asset.r2Key, 'thumb')} alt="thumb size check" style="max-width:120px; max-height:120px;" />
+							<span style="font-size:0.7rem; color:var(--text-muted);">card:</span>
+							<img src={imageUrl(asset.r2Key, 'card')} alt="card size check" style="max-width:200px; max-height:200px;" />
+						</p>
+					)}
 				</figure>
 			))}
 

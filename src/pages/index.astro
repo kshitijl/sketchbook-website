@@ -98,10 +98,18 @@ const timelineJson = JSON.stringify(
 <Base title="Lauria's Sketchbook">
 	<p>I draw and paint from life, in a sketchbook. It's how I look at things.</p>
 
-	{favorites.length > 0 && <PieceList pieces={favorites} large heroFirst />}
+	{favorites.length > 0 && (
+		<>
+			<p class="section-label">My favorite pieces I've made</p>
+			<PieceList pieces={favorites} large heroFirst />
+		</>
+	)}
 
 	{recentA.length > 0 ? (
-		<PieceList pieces={recentA} large heroFirst={favorites.length === 0} />
+		<>
+			<p class="section-label">Some recent pieces</p>
+			<PieceList pieces={recentA} large heroFirst={favorites.length === 0} />
+		</>
 	) : (
 		favorites.length === 0 && <p><em>Nothing uploaded yet.</em></p>
 	)}
@@ -119,7 +127,12 @@ const timelineJson = JSON.stringify(
 		)}
 	</section>
 
-	{recentB.length > 0 && <PieceList pieces={recentB} large />}
+	{recentB.length > 0 && (
+		<>
+			<p class="section-label">Some recent pieces</p>
+			<PieceList pieces={recentB} large />
+		</>
+	)}
 
 	{months.length > 0 && (
 		<section>
@@ -146,7 +159,12 @@ const timelineJson = JSON.stringify(
 		</section>
 	)}
 
-	{rediscoverA.length > 0 && <PieceList pieces={rediscoverA} large />}
+	{rediscoverA.length > 0 && (
+		<>
+			<p class="section-label">Some random pieces</p>
+			<PieceList pieces={rediscoverA} large />
+		</>
+	)}
 
 	{tagFrequency.length > 0 && (
 		<section>
@@ -165,7 +183,12 @@ const timelineJson = JSON.stringify(
 		</section>
 	)}
 
-	{rediscoverB.length > 0 && <PieceList pieces={rediscoverB} large />}
+	{rediscoverB.length > 0 && (
+		<>
+			<p class="section-label">Some random pieces</p>
+			<PieceList pieces={rediscoverB} large />
+		</>
+	)}
 
 	{paintingStats.lifetimeCount > 0 && (
 		<p>

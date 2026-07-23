@@ -320,6 +320,17 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 				padding: 0 var(--gutter);
 			}
 
+			/* Small quiet label above a home-page gallery batch (favorites/recent/random) — same
+			   quiet mono/uppercase voice as .piece-grid .caption, not a heavy heading, so it orients
+			   a scrolling viewer without competing with the images for attention. */
+			.section-label {
+				font-family: var(--mono);
+				text-transform: uppercase;
+				font-size: 0.75rem;
+				color: var(--text-muted);
+				margin: 1.5rem 0 0.35rem;
+			}
+
 			/* Timeline scrubber: a native range input, one step per month (see index.astro) —
 			   dragging it is the "scrubbing," no hand-rolled pointer/drag JS needed. Its own
 			   background is the colored month-by-month track (--timeline-gradient, computed

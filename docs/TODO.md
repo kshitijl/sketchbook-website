@@ -895,5 +895,28 @@ that our code then dutifully forwarded straight to the browser instead of fallin
       not the original `image/png`), not just that the fallback silently kicked in. Also re-checked
       the piece's own `/piece/<id>` page and the `/tag/painted%20from%20life` listing directly.
 
+## Post-upload size check, and home page section labels (2026-07-22)
+- [x] **Visible thumb/card check on the `?added=1` piece page**: prompted directly, following the
+      `?size=card` `503` bug above — the owner asked whether we could proactively warm all three
+      image size buckets right after upload, since they're cached indefinitely once served
+      successfully (`Cache-Control: public, max-age=31536000, immutable`, and the edge cache is
+      tiered so one request warms it globally). The `big` size is already requested by the normal
+      visible image on `/piece/<id>`; `thumb` (only otherwise requested from `/admin`) and `card`
+      (only otherwise requested from a grid — the OG meta tag references it but a browser doesn't
+      actually fetch that) were the gaps. Rather than hidden pre-fetch `<img>` tags, the owner asked
+      for them **visibly rendered** — "so i as the admin can see if something's wrong, immediately"
+      — a broken resize shows up as an actual broken-image icon right on the page you land on right
+      after uploading, not a background request you'd have to check dev tools to notice. Gated on
+      `justAdded` (the same `?added=1` flag as the "Add another piece" link) so this never shows to
+      other viewers.
+- [x] **Home page section labels**: small quiet labels ("My favorite pieces I've made" / "Some
+      recent pieces" / "Some random pieces") above each gallery batch, new shared `.section-label`
+      CSS class (same quiet mono/uppercase voice as `.piece-grid .caption`, not a heavy `<h2>` like
+      Map/Timeline/Tags — these are still just "more art," not another explore-by-X tool). Applied
+      to every batch of each kind (both `recentA`/`recentB`, both `rediscoverA`/`rediscoverB`), not
+      just the first of each — since they're spaced apart by Map/Timeline/Tags rather than adjacent,
+      a viewer scrolling past the second "recent" batch later on the page has no other cue it's the
+      same category as the first one they saw.
+
 ## Phase 7 — Content migration
 Owner is doing this manually via `/admin/new`, not an agent task.
