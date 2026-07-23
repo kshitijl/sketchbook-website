@@ -37,6 +37,16 @@ export const GET: APIRoute = async ({ params, url }) => {
 				.transform({ width: SIZE_WIDTHS[size], fit: 'scale-down' })
 				.output({ format: 'image/webp' });
 			const response = transformed.response();
+			// A failed transform doesn't always throw — the Images binding can also hand back a
+			// `Response` whose status is itself an error (found live: a `?size=card` request for
+			// one particular image consistently came back `503` with an empty body, while `thumb`
+			// and `big` for that exact same source succeeded, and every other image's `card` worked
+			// fine too — some transient hiccup specific to that one (size, image) combination).
+			// Relaying that straight to the browser meant a real, uploaded piece silently failed to
+			// display. Treat a non-OK response the same as a thrown error: fall back to the original.
+			if (!response.ok) {
+				throw new Error(`Images binding returned ${response.status}`);
+			}
 			response.headers.set('Cache-Control', 'public, max-age=31536000, immutable');
 			return response;
 		} catch {

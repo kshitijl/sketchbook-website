@@ -871,5 +871,29 @@ across many existing pieces at once, not one edit-page visit per piece.
       confirmed both picked it up on their `/piece/<id>` pages; bulk-removed it from one, confirmed
       that piece lost it while the other piece (not selected in the removal request) kept it.
 
+## Bug: an error-status Images response wasn't triggering the original-image fallback (2026-07-22)
+Reported directly: a piece ("Itp Camp The Day Before The Show", tagged `painted from life`) wasn't
+showing up visually on its `/tag/painted%20from%20life` page or its own `/piece/<id>` page — the
+piece and tag data were both correct (confirmed by pulling `data/pieces.json` straight from
+production R2 and checking), and the page's markup correctly linked to the right image URL. The
+actual `/img/...?size=card` request for that one image was returning a bare `503` with an empty
+body — but only for `size=card` on that specific image; `thumb` and `big` for the exact same source
+worked fine, as did `card` for every other piece's image. Root cause: `src/pages/img/[...key].ts`'s
+fallback-to-original logic only ran inside a `catch` block — it assumed a failed transform always
+throws. It doesn't always: `ImageTransformationResult.response()` (per
+`worker-configuration.d.ts`) is synchronous and can itself return a `Response` whose *status* is an
+error, without throwing at all. That's what happened here — some transient hiccup in Cloudflare's
+Images backend, specific to that one (image, size) combination, produced a `503` `Response` object
+that our code then dutifully forwarded straight to the browser instead of falling back.
+- [x] Fixed by checking `!response.ok` after calling `.response()` and throwing in that case too,
+      so it lands in the same `catch` that already re-fetches and serves the untransformed original.
+      A real, uploaded piece now never silently fails to display just because one particular resize
+      request had a bad day — worst case it's slightly larger/un-resized instead of broken.
+- [x] Verified against the actual failing URL: `?size=card` for that image went from a consistent
+      `503`/empty-body (4 repeated attempts, all failing) to `200`/`image/webp` after the fix
+      deployed — confirmed the transform itself succeeded post-fix (content-type was `image/webp`,
+      not the original `image/png`), not just that the fallback silently kicked in. Also re-checked
+      the piece's own `/piece/<id>` page and the `/tag/painted%20from%20life` listing directly.
+
 ## Phase 7 — Content migration
 Owner is doing this manually via `/admin/new`, not an agent task.

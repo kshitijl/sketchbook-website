@@ -300,6 +300,17 @@ three fall back correctly to the untransformed original on an invalid/missing `s
 transform error, and re-fetch a fresh R2 read for that fallback rather than risk returning a
 partially-consumed stream if the transform attempt had already started reading it.
 
+**A gap found live in that same fallback**: it only ran inside a `catch` block, on the assumption
+that a failed transform always throws. It doesn't — `ImageTransformationResult.response()` (see
+`worker-configuration.d.ts`) is synchronous and can itself return a `Response` whose *status* is an
+error, without throwing at all. Caught live: one specific piece's `?size=card` request came back a
+bare `503` with an empty body — but only for `card`, on that one image; `thumb`/`big` for the exact
+same source worked, and `card` for every other image worked — some transient hiccup in Cloudflare's
+Images backend specific to that one (image, size) pairing. The old code forwarded that error
+response straight to the browser (a real, correctly-tagged, correctly-uploaded piece silently
+failed to display) instead of falling back. Fixed by also checking `!response.ok` and throwing in
+that case, routing it into the same catch-and-serve-the-original path.
+
 ## Auth: Cloudflare Access + Google
 
 A Cloudflare Access application (team domain `untitledtrading.cloudflareaccess.com`) guards
