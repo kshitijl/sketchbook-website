@@ -918,5 +918,32 @@ that our code then dutifully forwarded straight to the browser instead of fallin
       a viewer scrolling past the second "recent" batch later on the page has no other cue it's the
       same category as the first one they saw.
 
+## Design discussion: don't trade away static-site caching for a simpler deploy step (2026-07-23)
+Prompted by a real annoyance: the `DEPLOY_PURGE_TOKEN` secret (gates `/deploy-purge`) has nowhere
+to live across Claude sessions — it's rightly not in the repo, and a scratchpad copy only lasts one
+session. Two ways of "fixing" this were proposed and both rejected, worth recording why:
+- [x] Rejected: regenerate the token fresh each session via `wrangler secret put` instead of
+      persisting it anywhere. Not actually implemented — flagged as still open (see
+      docs/architecture.md's Open items) rather than landed on, since it wasn't clear this was
+      actually agreed to before the bigger question below came up.
+- [x] Rejected, more fundamentally: drop `/deploy-purge` and purge-on-write entirely, replace with a
+      short Workers Cache TTL (a few minutes) so both data edits and code deploys just roll out on
+      their own. This was **explicitly rejected** — "then we're not caching basically. it's no
+      longer a site that has the performance characteristics of a static site... we want the
+      performance of an actually just straight up static site. that is why we are being so careful
+      and thinking about caching here." That's the actual design goal, not just an implementation
+      detail, and it hadn't been stated prominently enough in docs/architecture.md — strengthened
+      the intro and the Cache policy section to say this explicitly, so a future session doesn't
+      re-propose the same simplification without knowing it was already considered and rejected.
+- [x] **Corrected a real inaccuracy found while writing this up**: docs/architecture.md previously
+      claimed "the Worker version is part of the cache key, so each deploy starts with an empty
+      cache." That directly contradicts the very reason `/deploy-purge` exists (a deploy that
+      removed a route kept serving the old cached page well past that deploy) — the earlier claim
+      was apparently never actually verified and was just wrong. Corrected: Workers Cache keys
+      purely on the request URL; it has no notion of which Worker version is currently deployed.
+- [ ] **Still genuinely unresolved**: how `DEPLOY_PURGE_TOKEN` should be managed across sessions.
+      `/deploy-purge` itself is staying (per the rejection above), so this problem doesn't go away
+      on its own — see the matching Open Items entry in docs/architecture.md.
+
 ## Phase 7 — Content migration
 Owner is doing this manually via `/admin/new`, not an agent task.

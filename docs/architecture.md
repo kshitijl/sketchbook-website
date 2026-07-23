@@ -6,6 +6,16 @@ be **static-fast** for every viewer (snap-open on a phone anywhere in the world,
 JS) while still being **easy to edit** every few days (upload a new piece, retag things, reorder
 favorites) **without a git-commit-and-redeploy step**.
 
+**"Static-fast" is meant literally, not loosely**: the goal is the actual performance
+characteristics of a static site — HTML pages and images sitting already-rendered in Cloudflare's
+edge cache, served in single-digit milliseconds with the Worker never running at all — despite the
+underlying content being dynamically editable. This is *why* the caching design gets this much
+attention (see **Cache policy** below): a short TTL that just re-renders every few minutes would
+give up this property in exchange for simplicity, which is explicitly not the trade wanted here.
+The whole point of the purge-on-write architecture is getting both at once — a page can sit cached
+for weeks, but the moment something actually changes, it's invalidated immediately, not "eventually,
+within N minutes."
+
 ## Constraints and decisions
 
 - **Scale**: 500–1,000 total images/pieces. Metadata is small; individual **image files can be large**
@@ -151,18 +161,35 @@ Worker acting as its own origin, and needs zero dashboard configuration — just
 Two things read the `Cache-Control` header, for different purposes:
 
 - **`s-maxage` (Workers Cache, 30 days)**: this is what actually governs how often Astro's render
-  code reruns. It's long because *purge*, not expiry, is what keeps the cache fresh — step 6 of the
-  write flow invalidates it the instant something changes. A missed/failed purge is self-healing:
-  the next edit purges everything again regardless of what it touched. In steady state, Astro only
-  reruns for two reasons: the request immediately after a purge (guaranteed miss), or a fresh
-  Worker version's first request (the Worker version is part of the cache key, so each deploy
-  starts with an empty cache).
+  code reruns. It's long *on purpose* — the whole point is that a page, once rendered, sits cached
+  at the edge for weeks, genuinely static-site-fast, not re-rendering on some short clock. *Purge*,
+  not expiry, is what keeps it correct instead: step 6 of the write flow invalidates it the instant
+  something changes, and a missed/failed purge is self-healing (the next edit purges everything
+  again regardless of what it touched). **Correction**: an earlier version of this doc claimed the
+  Worker's deployed version is automatically part of the cache key, so a fresh deploy alone would
+  start with an empty cache with no purge needed. That turned out to be false — see the
+  `/deploy-purge` gap below, found precisely because a deploy did *not* invalidate a stale cached
+  page on its own. Workers Cache keys purely on the request URL; it has no idea a new Worker
+  version exists.
 - **`max-age` (the visitor's own browser, 1 minute)**: a server-side purge has zero effect on a
   browser's already-cached local copy — there's no way to remotely invalidate that. Kept short
   (rather than, say, an hour) mainly so the site owner can debug the live site without constantly
   clearing their own browser cache; a re-ask this frequent is cheap regardless, since it's just
   browser-to-edge traffic and the edge already has the fresh, purged-and-rerendered response cached
   and ready — this value has no bearing on how often Astro's render code actually runs.
+
+**Considered and rejected: a short TTL instead of purge-on-write.** Raised directly (2026-07-23,
+prompted by the awkwardness of managing the `/deploy-purge` token across sessions — see below):
+just drop purge-on-write and `/deploy-purge` entirely, shorten `s-maxage` to a few minutes, and let
+everything — data edits and code deploys alike — roll out on its own within that window. Rejected:
+that gives up the actual goal stated at the top of this document. A multi-minute TTL means the site
+goes back to re-rendering on a schedule rather than sitting genuinely cached — "no longer a site
+with the performance characteristics of a static site, where the HTML and images are all cached and
+ready to go, sitting in Cloudflare's edge cache." That property, not merely "eventually consistent
+within N minutes," is the actual design target, and it's *why* this section gets this much
+scrutiny in the first place — a short TTL would be simpler, but it trades away the one thing this
+whole cache design exists to protect. Long `s-maxage` plus purge-on-write is the only way found so
+far to get both genuinely-static edge performance *and* changes appearing immediately.
 
 Purging calls `cache.purge()` (imported from `'cloudflare:workers'`) **from inside the Worker** —
 this needs no API token or zone ID at all, unlike the zone-level Cache Purge HTTP API. That's
@@ -596,8 +623,14 @@ scrubber colored by this classification, not a static chart).
 - Whether to add explicit JWT-signature verification of the Access token server-side.
 - Whether a future search box over notes/titles is wanted (likely just client-side substring search
   over the existing JSON document at this scale).
-- Whether to keep `/deploy-purge` as standing infrastructure, given it exists to work around a real
-  gap (deploys don't purge the cache on their own — see Cache policy) rather than being originally
-  designed in.
+- **Open, unresolved (2026-07-23): how should `DEPLOY_PURGE_TOKEN` actually be managed across
+  sessions?** `/deploy-purge` itself stays — shortening the cache TTL instead was explicitly
+  considered and rejected (see Cache policy) since it gives up genuinely-static edge performance.
+  But the token that gates it is a Worker secret with no session-independent home: it's not in the
+  repo (shouldn't be — that's a real secret), and stashing a copy in Claude's own scratchpad only
+  lasts one session. Regenerating it fresh each session via `wrangler secret put` (already-
+  authenticated, no persistence needed) was proposed but not yet agreed to or implemented. Whoever
+  picks this up next should either land on that approach or find a better one — not just re-copy
+  the token into a new scratchpad file and call it solved again.
 - Removing the now-fully-dead `pinnedLinks` field/type, and the general codebase complexity audit
   the owner asked for — tracked in docs/TODO.md's standing simplicity-audit section, not done yet.
