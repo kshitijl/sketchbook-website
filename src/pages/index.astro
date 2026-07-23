@@ -122,7 +122,14 @@ const timelineJson = JSON.stringify(
 					label: `${MONTH_NAMES[m - 1]} ${y}`,
 					pieces: bucket.pieces.map((p) => {
 						const asset = getPrimaryAsset(p);
-						return { id: p.id, title: p.title, date: p.date, imageUrl: asset ? imageUrl(asset, 'card') : '' };
+						return {
+							id: p.id,
+							title: p.title,
+							date: p.date,
+							imageUrl: asset ? imageUrl(asset, 'card') : '',
+							placeName: p.location.placeName,
+							extra: p.assets.filter((a) => a.kind !== 'final').length
+						};
 					})
 				}];
 			})
@@ -199,14 +206,17 @@ const timelineJson = JSON.stringify(
 				))}
 			</div>
 			<p class="timeline-month" id="timeline-month"></p>
-			<div class="timeline-gallery-frame">
+			<a id="timeline-piece-link" href="#" class="carousel-image">
+				<img id="timeline-image" alt="" />
+			</a>
+			<a class="carousel-caption timeline-caption" id="timeline-caption" href="#">
+				<span class="carousel-title" id="timeline-title"></span>
+				<span class="carousel-hint" id="timeline-hint"></span>
+			</a>
+			<div class="carousel-nav">
 				<button id="timeline-prev" type="button" aria-label="Previous piece this month">‹</button>
-				<a id="timeline-piece-link" href="#">
-					<img id="timeline-image" alt="" />
-				</a>
 				<button id="timeline-next" type="button" aria-label="Next piece this month">›</button>
 			</div>
-			<p><em id="timeline-caption"></em></p>
 		</section>
 	)}
 

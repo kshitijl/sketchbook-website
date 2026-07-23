@@ -3,6 +3,8 @@ interface TimelinePiece {
 	title: string;
 	date: string;
 	imageUrl: string;
+	placeName: string;
+	extra: number;
 }
 
 interface TimelineMonth {
@@ -19,11 +21,13 @@ export function setupTimelineChart(): void {
 	const chart = document.getElementById('timeline-chart');
 	const img = document.getElementById('timeline-image') as HTMLImageElement | null;
 	const link = document.getElementById('timeline-piece-link') as HTMLAnchorElement | null;
+	const captionLink = document.getElementById('timeline-caption') as HTMLAnchorElement | null;
 	const monthLabel = document.getElementById('timeline-month');
-	const caption = document.getElementById('timeline-caption');
+	const title = document.getElementById('timeline-title');
+	const hint = document.getElementById('timeline-hint');
 	const prevBtn = document.getElementById('timeline-prev') as HTMLButtonElement | null;
 	const nextBtn = document.getElementById('timeline-next') as HTMLButtonElement | null;
-	if (!dataEl || !chart || !img || !link || !monthLabel || !caption || !prevBtn || !nextBtn) return;
+	if (!dataEl || !chart || !img || !link || !captionLink || !monthLabel || !title || !hint || !prevBtn || !nextBtn) return;
 
 	const byMonth: Record<string, TimelineMonth> = JSON.parse(dataEl.textContent || '{}');
 	const bars = [...chart.querySelectorAll<HTMLButtonElement>('.timeline-bar:not(:disabled)')];
@@ -41,12 +45,15 @@ export function setupTimelineChart(): void {
 		img!.src = piece.imageUrl;
 		img!.alt = piece.title;
 		link!.href = `/piece/${piece.id}`;
+		captionLink!.href = `/piece/${piece.id}`;
 		const count = bucket.pieces.length;
-		monthLabel!.textContent = `${bucket.label} · ${count} ${count === 1 ? 'piece' : 'pieces'}`;
-		caption!.textContent =
-			count > 1
-				? `${piece.title} — ${piece.date} (${pieceIndex + 1} of ${count})`
-				: `${piece.title} — ${piece.date}`;
+		// Month + position is the timeline's temporal context; the piece caption below matches the
+		// home-page carousels (title — date, then a location/more-photos/explore hint).
+		monthLabel!.textContent =
+			count > 1 ? `${bucket.label} · ${pieceIndex + 1} of ${count}` : bucket.label;
+		title!.textContent = `${piece.title} — ${piece.date}`;
+		hint!.textContent =
+			`${piece.placeName}${piece.extra > 0 ? ` · ${piece.extra} more photo${piece.extra > 1 ? 's' : ''}` : ''} · click to explore →`;
 
 		prevBtn!.hidden = count <= 1;
 		nextBtn!.hidden = count <= 1;

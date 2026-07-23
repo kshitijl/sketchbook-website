@@ -334,9 +334,6 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 			   scroll-snap track (native swipe works too, wired in carousel.ts). Full-bleed like the
 			   old grids so the art stays large. */
 			.carousel {
-				display: flex;
-				align-items: center;
-				gap: 0.5rem;
 				margin-bottom: 1.5rem;
 				width: calc(100vw - 2 * var(--gutter));
 				position: relative;
@@ -344,8 +341,6 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 				margin-left: calc(-50vw + var(--gutter));
 			}
 			.carousel-track {
-				flex: 1;
-				min-width: 0;
 				display: flex;
 				overflow-x: auto;
 				scroll-snap-type: x mandatory;
@@ -400,12 +395,18 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 				margin-top: 0.25rem;
 				color: var(--purple);
 			}
+			/* Arrows sit in a row *under* the image (not flanking it), so the image gets the full
+			   width — matters most for landscape pieces on mobile. */
+			.carousel-nav {
+				display: flex;
+				justify-content: center;
+				gap: 1rem;
+				margin-top: 0.75rem;
+			}
 			.carousel-prev,
 			.carousel-next {
-				flex-shrink: 0;
-				align-self: center;
 				font-size: 1.3rem;
-				padding: 0.5rem 0.7rem;
+				padding: 0.4rem 1.4rem;
 			}
 			/* Dimmed + inert at the ends of the track (toggled in carousel.ts), so it's clear there's
 			   nothing further that way. */
@@ -526,28 +527,15 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 				color: var(--text);
 				margin: 1rem 0 0;
 			}
-			.timeline-gallery-frame {
-				display: flex;
-				align-items: center;
-				gap: 0.75rem;
-				margin-top: 1rem;
-			}
-			.timeline-gallery-frame a {
-				flex: 1;
-				min-width: 0;
-				text-align: center;
-			}
-			.timeline-gallery-frame img {
+			/* The timeline's month preview reuses the carousel look: the image sits in the shared
+			   `.carousel-image` room, the caption below uses the carousel caption styling, and the
+			   prev/next arrows are in a `.carousel-nav` row underneath — so it reads identically to
+			   the home-page carousels. This just centres the caption link. */
+			.timeline-caption {
 				display: block;
-				max-width: 100%;
-				max-height: 60vh;
-				margin: 0 auto;
-				object-fit: contain;
-			}
-			.timeline-gallery-frame button {
-				flex-shrink: 0;
-				font-size: 1.2rem;
-				padding: 0.5rem 0.75rem;
+				text-align: center;
+				text-decoration: none;
+				margin-top: 0.5rem;
 			}
 
 			/* leaflet.markercluster's own base CSS (its dist/MarkerCluster.css and

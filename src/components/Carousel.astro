@@ -12,7 +12,6 @@ const { pieces, label } = Astro.props;
 
 {label && <p class="section-label">{label}</p>}
 <div class="carousel">
-	<button class="carousel-prev" type="button" aria-label="Previous">‹</button>
 	<ul class="carousel-track">
 		{pieces.map((piece, i) => {
 			const asset = getPrimaryAsset(piece);
@@ -38,5 +37,8 @@ const { pieces, label } = Astro.props;
 			);
 		})}
 	</ul>
-	<button class="carousel-next" type="button" aria-label="Next">›</button>
+	<div class="carousel-nav">
+		<button class="carousel-prev" type="button" aria-label="Previous">‹</button>
+		<button class="carousel-next" type="button" aria-label="Next">›</button>
+	</div>
 </div>
