@@ -109,14 +109,23 @@ function setupDragAndDrop(): void {
 const VARIANT_SIZES = ['thumb', 'card', 'big'] as const;
 type VariantSize = (typeof VARIANT_SIZES)[number];
 
+/** Losslessly replaces a HEIC file with a PNG — used both for browser `<img>` previews (HEIC
+ * can't be rendered outside Safari) and for the archival master upload itself. PNG, never a lossy
+ * JPEG/WebP re-encode: this is an archival site, so converting away from HEIC is purely a format-
+ * compatibility move for the rest of the system — the pixel data has to come through unchanged.
+ * Non-HEIC files pass through untouched. */
+async function pngIfHeic(file: File): Promise<File> {
+	if (!(await isHeic(file))) return file;
+	const png = await heicTo({ blob: file, type: 'image/png' });
+	return new File([png], file.name.replace(/\.hei[cf]$/i, '.png'), { type: 'image/png' });
+}
+
 /** A raw `URL.createObjectURL(file)` is enough for an `<img>` preview of any format the browser
- * can natively decode — but that's not HEIC outside Safari (iPhones save/share photos as HEIC by
- * default), so it needs the same client-side conversion as the real resize pipeline (see
- * `makeVariants`) just to be previewable at all. */
+ * can natively decode — but that's not HEIC outside Safari, so it needs converting first just to
+ * be previewable at all. */
 async function previewUrlFor(file: File): Promise<string> {
-	if (!(await isHeic(file))) return URL.createObjectURL(file);
 	try {
-		return URL.createObjectURL(await heicTo({ blob: file, type: 'image/jpeg' }));
+		return URL.createObjectURL(await pngIfHeic(file));
 	} catch (err) {
 		console.error('HEIC preview conversion failed:', err);
 		return URL.createObjectURL(file); // best effort — browser will show a broken image
@@ -195,6 +204,9 @@ function setupSubmitWithProgress(): void {
 			const finalFile = finalInput.files?.[0];
 			if (finalFile) {
 				log('Resizing main image…');
+				// The archival master itself must not stay HEIC either — swap in the lossless PNG
+				// conversion so nothing gets stored in a format the rest of the system can't use.
+				data.set('asset_final', await pngIfHeic(finalFile));
 				const variants = await makeVariants(finalFile);
 				if (!variants) throw new Error(`Couldn't resize the main image "${finalFile.name}" — try a JPEG or PNG.`);
 				for (const size of VARIANT_SIZES) data.set(`asset_final_${size}`, variants[size]);
@@ -202,8 +214,10 @@ function setupSubmitWithProgress(): void {
 			}
 
 			const extras = extraInput?.files ? [...extraInput.files] : [];
+			data.delete('asset_extra'); // re-added below in the same order, HEIC ones swapped for PNG
 			for (let i = 0; i < extras.length; i++) {
 				log(`Resizing additional photo ${i + 1} of ${extras.length}…`);
+				data.append('asset_extra', await pngIfHeic(extras[i]));
 				const variants = await makeVariants(extras[i]);
 				if (!variants) throw new Error(`Couldn't resize additional photo ${i + 1} ("${extras[i].name}").`);
 				for (const size of VARIANT_SIZES) data.set(`asset_extra_${size}_${i}`, variants[size]);

@@ -197,6 +197,16 @@ if (piece && Astro.request.method === 'POST') {
 
 		const finalFile = formData.get('asset_final');
 		if (finalFile instanceof File && finalFile.size > 0) {
+			// The final slot is single-image by design (see the OTHER_KINDS comment above) — the
+			// upload form's own label says "Replace with image", so a new final upload must actually
+			// replace the old one, not sit alongside it. Drop any existing final asset(s) not already
+			// queued for removal via checkbox, rather than leaving them as an invisible duplicate (the
+			// UI only ever shows/offers removal for the *first* final asset it finds).
+			for (const asset of piece.assets) {
+				if (asset.kind !== 'final') continue;
+				if (assetUpdates.some((u) => u.action === 'remove' && u.assetId === asset.id)) continue;
+				assetUpdates.push({ action: 'remove', assetId: asset.id });
+			}
 			await uploadAsset(finalFile, 'final', getVariantFiles(formData, (s) => `asset_final_${s}`)!);
 		}
 
