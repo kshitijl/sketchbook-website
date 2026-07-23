@@ -1,7 +1,7 @@
 ---
 import { env } from 'cloudflare:workers';
 import Base from '../layouts/Base.astro';
-import PieceList from '../components/PieceList.astro';
+import Carousel from '../components/Carousel.astro';
 import { getPieces } from '../lib/data';
 import { classifyMedium, getPaintingStats, getPiecesByDateDescending, getPrimaryAsset, getRandomPieces, getTagFrequency } from '../lib/facets';
 import { imageUrl } from '../lib/images';
@@ -24,23 +24,15 @@ const favorites = data.pieces
 const allByDate = getPiecesByDateDescending(data);
 const shown = new Set(favorites.map((p) => p.id));
 
-// Split into a few smaller batches rather than one big block, so real art keeps showing up
-// between the map/timeline/tags sections instead of being front-loaded into a single wall of
-// images followed by all the "explore by X" tools in a row.
-const recentPool = allByDate.filter((p) => !shown.has(p.id));
-const recentA = recentPool.slice(0, 6);
-const recentB = recentPool.slice(6, 12);
-recentA.forEach((p) => shown.add(p.id));
-recentB.forEach((p) => shown.add(p.id));
+// Recent pieces (favorites excluded so nothing repeats across the page), shown as one carousel.
+const recents = allByDate.filter((p) => !shown.has(p.id)).slice(0, 15);
+recents.forEach((p) => shown.add(p.id));
 
-// Picked at render time, which — per the purge-on-write cache policy — only happens right after
-// an edit or for the first visitor at a given edge location. So this is "a random pick that
-// changes whenever you edit something," not "re-randomized on every single visit." That's an
-// intentional trade against the caching model, not a bug: a truly per-visit random pick would
-// mean rendering (and therefore not caching) this page on every request.
-const rediscoverA = getRandomPieces(data.pieces, 6, shown);
-rediscoverA.forEach((p) => shown.add(p.id));
-const rediscoverB = getRandomPieces(data.pieces, 6, shown);
+// A random "rediscover" pick, excluding anything already shown above. Picked at render time —
+// which, under the purge-on-write cache policy, only happens right after an edit or for the first
+// visitor at a given edge location — so it's "a random pick that changes when you edit something,"
+// not re-randomized on every visit (a per-visit shuffle would mean never caching this page).
+const randoms = getRandomPieces(data.pieces, 12, shown);
 
 const tagFrequency = getTagFrequency(data);
 const maxTagCount = tagFrequency[0]?.count ?? 1;
@@ -128,21 +120,7 @@ const timelineJson = JSON.stringify(
 <Base title="Lauria's Sketchbook">
 	<p>I draw and paint from life, in a sketchbook. It's how I look at things.</p>
 
-	{favorites.length > 0 && (
-		<>
-			<p class="section-label">My favorite pieces I've made</p>
-			<PieceList pieces={favorites} large heroFirst />
-		</>
-	)}
-
-	{recentA.length > 0 ? (
-		<>
-			<p class="section-label">Some recent pieces</p>
-			<PieceList pieces={recentA} large heroFirst={favorites.length === 0} />
-		</>
-	) : (
-		favorites.length === 0 && <p><em>Nothing uploaded yet.</em></p>
-	)}
+	{favorites.length > 0 && <Carousel pieces={favorites} label="My favorite pieces I've made" />}
 
 	<section>
 		<h2>Map</h2>
@@ -157,12 +135,26 @@ const timelineJson = JSON.stringify(
 		)}
 	</section>
 
-	{recentB.length > 0 && (
-		<>
-			<p class="section-label">Some recent pieces</p>
-			<PieceList pieces={recentB} large />
-		</>
+	{recents.length > 0 && <Carousel pieces={recents} label="Some recent pieces" />}
+
+	{tagFrequency.length > 0 && (
+		<section>
+			<h2>Tags</h2>
+			<p>
+				{tagFrequency.map(({ tag, count }) => (
+					<a
+						class="tag-chip"
+						style={`display:inline-block; margin:0 0.4rem 0.4rem 0; font-size:${(0.7 + (count / maxTagCount) * 0.6).toFixed(2)}rem;`}
+						href={`/tag/${encodeURIComponent(tag)}`}
+					>
+						#{tag}
+					</a>
+				))}
+			</p>
+		</section>
 	)}
+
+	{randoms.length > 0 && <Carousel pieces={randoms} label="Some random pieces" />}
 
 	{bars.length > 0 && (
 		<section>
@@ -205,37 +197,6 @@ const timelineJson = JSON.stringify(
 		</section>
 	)}
 
-	{rediscoverA.length > 0 && (
-		<>
-			<p class="section-label">Some random pieces</p>
-			<PieceList pieces={rediscoverA} large />
-		</>
-	)}
-
-	{tagFrequency.length > 0 && (
-		<section>
-			<h2>Tags</h2>
-			<p>
-				{tagFrequency.map(({ tag, count }) => (
-					<a
-						class="tag-chip"
-						style={`display:inline-block; margin:0 0.4rem 0.4rem 0; font-size:${(0.7 + (count / maxTagCount) * 0.6).toFixed(2)}rem;`}
-						href={`/tag/${encodeURIComponent(tag)}`}
-					>
-						#{tag}
-					</a>
-				))}
-			</p>
-		</section>
-	)}
-
-	{rediscoverB.length > 0 && (
-		<>
-			<p class="section-label">Some random pieces</p>
-			<PieceList pieces={rediscoverB} large />
-		</>
-	)}
-
 	{paintingStats.lifetimeCount > 0 && (
 		<p>
 			<em>
@@ -255,6 +216,8 @@ const timelineJson = JSON.stringify(
 <script>
 	import { setupMap } from '../scripts/mapPage';
 	import { setupTimelineChart } from '../scripts/timelineChart';
+	import { setupCarousels } from '../scripts/carousel';
 	setupMap();
 	setupTimelineChart();
+	setupCarousels();
 </script>

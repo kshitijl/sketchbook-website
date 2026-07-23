@@ -1,0 +1,40 @@
+---
+import { getPrimaryAsset } from '../lib/facets';
+import { imageUrl } from '../lib/images';
+import type { Piece } from '../lib/types';
+
+interface Props {
+	pieces: Piece[];
+	label?: string;
+}
+const { pieces, label } = Astro.props;
+---
+
+{label && <p class="section-label">{label}</p>}
+<div class="carousel">
+	<button class="carousel-prev" type="button" aria-label="Previous">‹</button>
+	<ul class="carousel-track">
+		{pieces.map((piece, i) => {
+			const asset = getPrimaryAsset(piece);
+			// How many photos beyond the main image (reference/in-progress/setup/…) there are to
+			// explore on the full piece page — surfaced in the hint so the viewer knows there's more.
+			const extra = piece.assets.filter((a) => a.kind !== 'final').length;
+			return (
+				<li class="carousel-slide">
+					<a href={`/piece/${piece.id}`}>
+						{asset && <img src={imageUrl(asset, 'big')} alt={piece.title} loading={i === 0 ? 'eager' : 'lazy'} />}
+						<span class="carousel-caption">
+							<span class="carousel-title">{piece.title} — {piece.date}</span>
+							<span class="carousel-hint">
+								{piece.location.placeName}
+								{extra > 0 && <> · {extra} more photo{extra > 1 ? 's' : ''}</>}
+								{' · click to explore →'}
+							</span>
+						</span>
+					</a>
+				</li>
+			);
+		})}
+	</ul>
+	<button class="carousel-next" type="button" aria-label="Next">›</button>
+</div>
