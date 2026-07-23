@@ -358,19 +358,20 @@ if (piece && Astro.request.method === 'POST') {
 										<label><input type="checkbox" name={`remove_asset_${finalAsset.id}`} /> Remove this image</label>
 									</div>
 								)}
-								<label>
-									{finalAsset ? 'Replace with' : 'Add'} image:
-									<input
-										type="file"
-										id="finalImageInput"
-										class="asset-preview-input"
-										data-preview-id="preview-final"
-										name="asset_final"
-										accept="image/*"
-									/>
-								</label>
-								<br />
-								<img id="preview-final" alt="New preview" style="display:none; max-width:200px; max-height:200px; margin-top:0.5rem;" />
+								<div class="dropzone" data-drop-for="finalImageInput">
+									<label>
+										{finalAsset ? 'Replace with' : 'Add'} image — or drag one here:
+										<input
+											type="file"
+											id="finalImageInput"
+											class="asset-preview-input"
+											data-preview-id="preview-final"
+											name="asset_final"
+											accept="image/*"
+										/>
+									</label>
+									<img id="preview-final" alt="New preview" style="display:none; max-width:200px; max-height:200px; margin-top:0.5rem;" />
+								</div>
 							</>
 						);
 					})()}
@@ -399,11 +400,13 @@ if (piece && Astro.request.method === 'POST') {
 								<label><input type="checkbox" name={`remove_asset_${asset.id}`} /> Remove</label>
 							</div>
 						))}
-					<label>
-						Add more photos (you can select more than one), then tag each below:
-						<input type="file" id="extraAssetInput" name="asset_extra" accept="image/*" multiple />
-					</label>
-					<div id="extraAssetList"></div>
+					<div class="dropzone" data-drop-for="extraAssetInput">
+						<label>
+							Add more photos (select several, or drag them here), then tag each below:
+							<input type="file" id="extraAssetInput" name="asset_extra" accept="image/*" multiple style="margin-top:0.5rem;" />
+						</label>
+						<div id="extraAssetList"></div>
+					</div>
 				</div>
 
 				<p><button type="submit">Save</button></p>

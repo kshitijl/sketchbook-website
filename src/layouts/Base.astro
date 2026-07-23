@@ -219,6 +219,16 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 				font: inherit;
 			}
 
+			/* Drop target for dragging images straight from Photos/Finder (see pieceForm.ts). */
+			.dropzone {
+				border: 2px dashed var(--border);
+				padding: 1rem;
+			}
+			.dropzone.dragover {
+				background: var(--pink);
+				color: white;
+			}
+
 			.tag-chip {
 				background: var(--panel);
 				color: var(--text);

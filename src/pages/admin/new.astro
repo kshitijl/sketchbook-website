@@ -210,9 +210,9 @@ if (Astro.request.method === 'POST') {
 	)}
 
 	<form method="POST" enctype="multipart/form-data">
-		<p>
+		<div class="dropzone" data-drop-for="finalImageInput">
 			<label>
-				<strong>Select image</strong><br />
+				<strong>Select image</strong> — or drag one here (from Photos / Finder)<br />
 				<input
 					type="file"
 					id="finalImageInput"
@@ -223,10 +223,8 @@ if (Astro.request.method === 'POST') {
 					required
 				/>
 			</label>
-		</p>
-		<p>
-			<img id="finalImagePreview" alt="Preview" style="display:none; max-width:320px; max-height:320px;" />
-		</p>
+			<img id="finalImagePreview" alt="Preview" style="display:none; max-width:320px; max-height:320px; margin-top:0.5rem;" />
+		</div>
 
 		<p>
 			<label>Title<br /><input type="text" id="titleInput" name="title" value={values.title} required /></label>
@@ -278,13 +276,11 @@ if (Astro.request.method === 'POST') {
 
 		<details>
 			<summary>Additional photos (optional) — reference, in-progress, value study, setup, whatever</summary>
-			<p>
-				<em>Select as many as you want, then tag each one right below.</em>
-			</p>
-			<p>
-				<input type="file" id="extraAssetInput" name="asset_extra" accept="image/*" multiple />
-			</p>
-			<div id="extraAssetList"></div>
+			<div class="dropzone" data-drop-for="extraAssetInput">
+				<em>Select as many as you want (or drag them here), then tag each one below.</em><br />
+				<input type="file" id="extraAssetInput" name="asset_extra" accept="image/*" multiple style="margin-top:0.5rem;" />
+				<div id="extraAssetList"></div>
+			</div>
 		</details>
 
 		<p><button type="submit">Save</button></p>

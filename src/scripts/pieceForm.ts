@@ -57,7 +57,44 @@ export function setupPieceForm(options: PieceFormOptions = {}): void {
 	setupExtraAssetTagging();
 	setupFilenameSuggestions();
 	setupSubmitWithProgress();
+	setupDragAndDrop();
 	setupTagChips();
+}
+
+/**
+ * Lets you drag images straight from Photos/Finder onto a `.dropzone[data-drop-for]` instead of the
+ * scroll-heavy file picker. The dropped files are loaded into the referenced file input and a
+ * `change` event is fired, so the existing preview / kind-tagging / filename-suggestion / submit
+ * handlers all treat it exactly like a picked file — no separate code path.
+ */
+function setupDragAndDrop(): void {
+	document.querySelectorAll<HTMLElement>('.dropzone[data-drop-for]').forEach((zone) => {
+		const input = document.getElementById(zone.dataset.dropFor ?? '') as HTMLInputElement | null;
+		if (!input) return;
+
+		zone.addEventListener('dragover', (e) => {
+			e.preventDefault();
+			zone.classList.add('dragover');
+		});
+		zone.addEventListener('dragleave', (e) => {
+			// Ignore dragleave that only crossed into a child element, so the highlight doesn't flicker.
+			if (!zone.contains(e.relatedTarget as Node | null)) zone.classList.remove('dragover');
+		});
+		zone.addEventListener('drop', (e) => {
+			e.preventDefault();
+			zone.classList.remove('dragover');
+			const dropped = e.dataTransfer?.files;
+			if (!dropped || dropped.length === 0) return;
+			const dt = new DataTransfer();
+			// Single-file inputs (the main image) take just the first; `multiple` inputs take all.
+			for (const file of input.multiple ? [...dropped] : [dropped[0]]) {
+				if (file.type.startsWith('image/')) dt.items.add(file);
+			}
+			if (dt.files.length === 0) return;
+			input.files = dt.files;
+			input.dispatchEvent(new Event('change', { bubbles: true }));
+		});
+	});
 }
 
 const VARIANT_SIZES = ['thumb', 'card', 'big'] as const;
