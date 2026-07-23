@@ -94,27 +94,12 @@ export function getTagFrequency(data: PiecesData): TagFrequency[] {
 		.sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
 }
 
-/** Rough medium classification used to derive "phases" (drawing-heavy vs painting-heavy
- * stretches) automatically from tags, instead of a manually maintained field. */
-const DRY_MEDIA = new Set(['pencil', 'ink']);
 const WET_MEDIA = new Set(['watercolor', 'gouache', 'oil', 'acrylic']);
-
-export type MediumGroup = 'dry' | 'wet' | 'unclassified';
-
-export function classifyMedium(tags: string[]): MediumGroup {
-	const hasDry = tags.some((t) => DRY_MEDIA.has(t));
-	const hasWet = tags.some((t) => WET_MEDIA.has(t));
-	if (hasWet && !hasDry) return 'wet';
-	if (hasDry && !hasWet) return 'dry';
-	return 'unclassified';
-}
 
 /**
  * Working definition of "painting" (as opposed to a drawing or a quick study): a *finished* piece
- * tagged with at least one wet medium — checked directly against the tag, not via
- * classifyMedium(), so a mixed piece (e.g. ink *and* watercolor) still counts rather than falling
- * into "unclassified". This is a first guess, not a confirmed definition from the artist — revisit
- * if it doesn't match how they actually count. See docs/TODO.md.
+ * tagged with at least one wet medium. This is a first guess, not a confirmed definition from the
+ * artist — revisit if it doesn't match how they actually count. See docs/TODO.md.
  */
 export function isPainting(piece: Piece): boolean {
 	return piece.stage === 'finished' && piece.tags.some((t) => WET_MEDIA.has(t));

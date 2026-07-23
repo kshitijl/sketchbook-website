@@ -471,10 +471,16 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 				display: block;
 				width: 100%;
 			}
-			.seg-wet {
+			/* Timeline medium buckets — validated categorical palette (gouache/watercolor/sketchbook
+			   separate cleanly for colourblind viewers; see the dataviz palette check). `other` is a
+			   neutral catch-all for pieces tagged with none of the three. */
+			.seg-gouache {
+				background: #b23a5a;
+			}
+			.seg-watercolor {
 				background: #2f6fd0;
 			}
-			.seg-dry {
+			.seg-sketchbook {
 				background: #b5732e;
 			}
 			.seg-other {

@@ -10,7 +10,6 @@ import {
 	getRandomPieces,
 	getPiecesByPlace,
 	getTagFrequency,
-	classifyMedium,
 	isPainting,
 	getPaintingStats
 } from './facets';
@@ -195,21 +194,6 @@ describe('getTagFrequency', () => {
 			{ tag: 'watercolor', count: 2 },
 			{ tag: 'india-2023', count: 1 }
 		]);
-	});
-});
-
-describe('classifyMedium', () => {
-	it('classifies dry media', () => {
-		expect(classifyMedium(['pencil'])).toBe('dry');
-	});
-	it('classifies wet media', () => {
-		expect(classifyMedium(['watercolor'])).toBe('wet');
-	});
-	it('classifies mixed dry+wet as unclassified', () => {
-		expect(classifyMedium(['pencil', 'watercolor'])).toBe('unclassified');
-	});
-	it('classifies no recognized medium as unclassified', () => {
-		expect(classifyMedium(['india-2023'])).toBe('unclassified');
 	});
 });
 

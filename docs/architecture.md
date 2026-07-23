@@ -516,8 +516,8 @@ piece still gets a real static permalink page (sharing, SEO/OG tags, JS-off acce
 ## Timeline (the other JS island)
 
 An **activity bar chart**, one bar per month across the whole span the collection covers — bar
-height is how many pieces were made that month, and each bar is stacked by medium (dry/wet/other) so
-it reads *how much* and *what kind* of work at a glance. This replaced an earlier `<input
+height is how many pieces were made that month, and each bar is stacked by medium
+(gouache/watercolor/sketchbook page) so it reads *how much* and *what kind* of work at a glance. This replaced an earlier `<input
 type="range">` scrubber whose only "meaning" was a colored gradient track: the slider never labeled
 the month or year and the gradient bands were too subtle to read as data, so it hid the data instead
 of showing it (owner feedback: "it doesn't say the month or year, it just doesn't seem to mean
@@ -531,10 +531,14 @@ scrubber's track was trying to convey, but legibly and clickable.
   below (the same `‹`/`›` prev/next frame the scrubber used, unchanged — it appears when a month has
   more than one piece). Opens on the most recent non-empty month. Empty months are `disabled`, so
   they're not focusable or clickable and the JS ignores them (`:not(:disabled)`).
-- **Colors**: dry vs. wet reuses `classifyMedium()`, the same dry/wet split used elsewhere, with
-  `unclassified` folded into a neutral "other" segment. The two real categories use a categorical
-  pair (blue `#2f6fd0` = wet, sepia `#b5732e` = dry) validated with the dataviz skill's palette
-  checker against the light surface — the site is light-only, so only light mode was validated.
+- **Buckets** (`timelineMedium()` in `index.astro`): by medium tag, priority **gouache > sketchbook
+  page > watercolor** — a piece tagged both gouache and watercolor counts as gouache; both
+  sketchbook-page and watercolor counts as sketchbook page; watercolor only if it has neither of the
+  other two. `other` is a neutral catch-all (empty today — every piece has one of the three — but
+  keeps the bar total honest if a piece with none is added later). Colors are a validated categorical
+  palette (wine `#b23a5a` = gouache, blue `#2f6fd0` = watercolor, sepia `#b5732e` = sketchbook page,
+  neutral gray = other), checked with the dataviz skill's palette checker; the site is light-only, so
+  only light mode was validated.
 - The chart is server-rendered CSS (a flex row of bars, each a flex column of segment `<span>`s with
   server-computed pixel heights) — no drawing library, no canvas. `src/scripts/timelineChart.ts`
   (`setupTimelineChart()`) only handles selection/paging, same `setupX()`-export-plus-embedded-JSON
@@ -718,10 +722,9 @@ following the same rule: never clobber a value the owner already set on purpose.
 - `/deploy-purge` — not a real page, a token-gated GET endpoint (see the Cache policy section) for
   purging the cache after a deploy from a CLI session that can't go through Cloudflare Access.
 
-**"Phases"**: not a stored field. Derived automatically by classifying each piece's medium tags into
-rough groups ("dry" — pencil, ink — vs "wet" — watercolor, gouache, oil, acrylic) and charting density
-over `date` — see the Timeline section above for how this is actually surfaced (an interactive
-activity bar chart stacked by this classification).
+**"Phases"**: not a stored field. Derived automatically from each piece's medium tags
+(gouache / watercolor / sketchbook page — see the Timeline section's bucket rules) and charted by
+density over `date` — surfaced as the interactive activity bar chart, stacked by that classification.
 
 ## Open items (deliberately deferred)
 
