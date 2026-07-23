@@ -4,7 +4,7 @@ import Base from '../../layouts/Base.astro';
 import PieceThumb from '../../components/PieceThumb.astro';
 import { getPieces, updatePieces } from '../../lib/data';
 import { compareDatesDescending } from '../../lib/facets';
-import { purgeEverything } from '../../lib/purge';
+import { purgePages } from '../../lib/purge';
 import { isAuthorizedAdminRequest } from '../../lib/adminGuard';
 import { backupPieceData, logBackupEvent } from '../../lib/backup';
 
@@ -55,7 +55,7 @@ if (Astro.request.method === 'POST') {
 		metadataSnapshotTaken,
 		errors: backupErrors
 	}).catch(() => {});
-	await purgeEverything();
+	await purgePages();
 
 	return Astro.redirect('/admin/favorites');
 }

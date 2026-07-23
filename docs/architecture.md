@@ -141,10 +141,13 @@ difference, not an arbitrary one.
 
 ## Cache policy: purge-on-write, not TTL-driven expiry
 
-Every HTML page and the shared `data/pieces.json` fetch carries the same `Cache-Control`:
+Every actual page response (never `/admin/*`, never `/img/*` — see **Purging by tag, not
+everything** below) carries the same two headers, set together by `setPageCacheHeaders()`
+(`src/lib/cache.ts`):
 
 ```
 Cache-Control: public, max-age=60, s-maxage=2592000
+Cache-Tag: page
 ```
 
 **This is read by Workers Cache** (`"cache": { "enabled": true }` in `wrangler.jsonc`, requires
@@ -197,8 +200,33 @@ actually the important part of the correction: per Cloudflare's own docs, "no zo
 the dashboard, API, or Terraform) affects Workers Caching content" — only this in-Worker call does.
 The zone HTTP API this app used to call had no effect on Workers Cache whatsoever, meaning the
 original purge-on-write design was silently a no-op even before the missing-Cache-Rule issue was
-found. Images are unaffected by any of this — they stay long-cached/immutable, since they're
-already invalidation-free by virtue of versioned keys.
+found.
+
+**Purging by tag, not everything.** `cache.purge()`'s `CachePurgeOptions` support `tags` and
+`pathPrefixes` alongside `purgeEverything` — `purgePages()` (`src/lib/purge.ts`, called from every
+admin write handler and from `/deploy-purge`'s default path) uses `{ tags: ['page'] }`, matching the
+`Cache-Tag: page` header every actual page sets. This was a real correction (2026-07-23): the
+original design used `purgeEverything: true` for every purge, which — since `/img/...?size=...`
+responses are served by this same Worker through this same cache — also nuked the resized-image
+cache on every single admin edit, even though an edit to a piece's title/tags can never change what
+an image looks like. That forced Cloudflare Images to redo resize work that had nothing to do with
+whatever triggered the purge, on every write. `pathPrefixes` was considered and rejected as the
+mechanism instead of tags — it would mean enumerating every non-`/img/` route prefix to purge,
+reintroducing exactly the "list of affected paths to maintain, easy to forget one" problem this
+whole purge-on-write design exists to avoid. Tags don't have that drift risk, as long as every page
+route keeps using the shared `setPageCacheHeaders()` helper rather than setting `Cache-Control`
+directly. `purgeEverything()` still exists as a rarely-used escape hatch (`/deploy-purge?...&full=1`
+/ `node scripts/deploy-purge.mjs --full`) for the rare case a real hard reset is needed — e.g. this
+migration itself needed exactly one full purge to flush cache entries from before the tag existed.
+
+**A quirk worth knowing**: a client fetching an already-cached page does not see the `Cache-Tag`
+header back in the response — Cloudflare consumes it internally for purge-matching without
+necessarily echoing it out on a served `HIT`. This looked like the tagging wasn't working at first;
+confirmed it actually was by checking the effect instead of the header — purging by tag changed the
+home page's debug render-id (see below), while a `card`-size image's `CF-Cache-Status` stayed `HIT`
+straight through that same purge. Images are otherwise unaffected by any of this regardless of
+purge mechanism — they stay long-cached/immutable, since they're already invalidation-free by
+virtue of versioned keys.
 
 **Things that silently bypass Workers Cache** (worth knowing if a page mysteriously stops caching):
 only `GET`/`HEAD` requests are cached; a `Set-Cookie` response header forces `BYPASS`; requests
@@ -213,17 +241,44 @@ every page also renders a small debug footer (see Base.astro) showing the render
 colo — if reloading the same URL keeps showing the same timestamp, that request was served from
 cache, not re-rendered.
 
-**A real gap found after this design was already live**: `purgeEverything()` only ever runs from
-inside an authenticated admin write handler — a pure code deploy with no accompanying data edit
-never purges anything. Caught live when a route removed in a deploy kept serving its old,
-now-nonexistent page from a still-warm cache entry, well past when that deploy went out. Since
-deploying happens from a CLI session with no Cloudflare Access login, the existing purge-on-write
-path can't be reused directly — `src/pages/deploy-purge.ts` is a small GET endpoint gated by a
-`DEPLOY_PURGE_TOKEN` Worker secret instead (404s on any mismatch or if the secret isn't set, so its
-existence isn't advertised), called once after every deploy since. **Purge propagation is also not
-instant in practice** — repeatedly confirmed a stale `HIT` for 15-30+ seconds after calling it,
-before a re-check finally showed a fresh `MISS`. Don't trust the first post-purge check; wait ~25-30s
-and re-verify.
+**A real gap found after this design was already live**: `purgePages()` (originally
+`purgeEverything()`) only ever runs from inside an authenticated admin write handler — a pure code
+deploy with no accompanying data edit never purges anything. Caught live when a route removed in a
+deploy kept serving its old, now-nonexistent page from a still-warm cache entry, well past when
+that deploy went out. Since deploying happens from a CLI session with no Cloudflare Access login,
+the existing purge-on-write path can't be reused directly — `src/pages/deploy-purge.ts` is a small
+GET endpoint gated by a `DEPLOY_PURGE_TOKEN` Worker secret instead (404s on any mismatch or if the
+secret isn't set, so its existence isn't advertised), purging pages by tag by default, with an
+optional `?full=1` for the full-purge escape hatch. **Purge propagation is also not instant in
+practice** — repeatedly confirmed a stale `HIT` for 15-30+ seconds after calling it, before a
+re-check finally showed a fresh `MISS`. Don't trust the first post-purge check; wait ~25-30s and
+re-verify.
+
+## Deploying
+
+`npm run deploy` is the one command — `predeploy` (an npm pre-script hook that fires automatically)
+runs `astro check && vitest run && astro build`, then `wrangler deploy`, then
+`scripts/deploy-purge.mjs`. This replaced a manual multi-step sequence (check, test, build, deploy,
+locate the purge token, curl `/deploy-purge`, wait, re-verify) after explicit feedback that a
+several-step manual dance for something this routine was exactly the kind of complexity to avoid.
+
+**`DEPLOY_PURGE_TOKEN` is never persisted anywhere, on purpose.** It's a Worker secret with no
+natural session-independent home — not in the repo (it's a real secret), and a scratchpad copy only
+lasts one Claude session. Rather than solve that storage problem, `scripts/deploy-purge.mjs` avoids
+needing one: it generates a fresh random token, sets it as the secret via `wrangler secret put`
+(piped through stdin, non-interactive — using the `wrangler` login already authenticated in the
+environment), uses it immediately to call `/deploy-purge`, and then it's gone. Nothing to remember,
+nothing that can go stale, and rotating it every deploy is arguably *more* secure than a long-lived
+token would be, not less. The purge call retries up to 8 times, 5 seconds apart — a secret rotation
+is itself a small deploy and can take a few seconds to fully propagate before the new token is
+recognized everywhere; the first live run of this failed with a tighter 5×4s budget, which is why it
+was loosened.
+
+**Explicitly considered and rejected: dropping this in favor of a short cache TTL.** See "Considered
+and rejected: a short TTL instead of purge-on-write" above — that would have sidestepped the token
+problem by removing the thing that needs it, but at the cost of the site's actual genuinely-static
+edge-cache performance goal. Automating the existing multi-step process was the fix, not
+simplifying away the design it was automating.
 
 ## Backups
 
@@ -623,14 +678,8 @@ scrubber colored by this classification, not a static chart).
 - Whether to add explicit JWT-signature verification of the Access token server-side.
 - Whether a future search box over notes/titles is wanted (likely just client-side substring search
   over the existing JSON document at this scale).
-- **Open, unresolved (2026-07-23): how should `DEPLOY_PURGE_TOKEN` actually be managed across
-  sessions?** `/deploy-purge` itself stays — shortening the cache TTL instead was explicitly
-  considered and rejected (see Cache policy) since it gives up genuinely-static edge performance.
-  But the token that gates it is a Worker secret with no session-independent home: it's not in the
-  repo (shouldn't be — that's a real secret), and stashing a copy in Claude's own scratchpad only
-  lasts one session. Regenerating it fresh each session via `wrangler secret put` (already-
-  authenticated, no persistence needed) was proposed but not yet agreed to or implemented. Whoever
-  picks this up next should either land on that approach or find a better one — not just re-copy
-  the token into a new scratchpad file and call it solved again.
+- ~~Open, unresolved: how should `DEPLOY_PURGE_TOKEN` actually be managed across sessions?~~
+  **Resolved (2026-07-23)**: see the Deploying section above — `npm run deploy` regenerates it
+  fresh every time via `scripts/deploy-purge.mjs`, so it never needs to persist anywhere.
 - Removing the now-fully-dead `pinnedLinks` field/type, and the general codebase complexity audit
   the owner asked for — tracked in docs/TODO.md's standing simplicity-audit section, not done yet.

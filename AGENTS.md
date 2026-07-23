@@ -25,6 +25,15 @@ astro dev --background
 
 Manage the background server with `astro dev stop`, `astro dev status`, and `astro dev logs`.
 
+## Deploying
+
+Always deploy with `npm run deploy`. Never do the check/test/build/deploy/purge steps by hand as a
+manual sequence — that's exactly the kind of multi-step complexity this project explicitly doesn't
+want (see docs/architecture.md's "Deploying" section for the full story). `npm run deploy` already
+runs `astro check`, `vitest run`, and `astro build` (via the `predeploy` script), then
+`wrangler deploy`, then purges the cache with a freshly-generated token that's never persisted
+anywhere — it doesn't need to be, since it's regenerated every single deploy.
+
 ## Documentation
 
 Full documentation: https://docs.astro.build

@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
-import { purgeEverything } from '../lib/purge';
+import { purgeEverything, purgePages } from '../lib/purge';
 
 /**
  * Purge-on-write (see src/lib/purge.ts) only fires from admin write handlers, which all require a
@@ -10,12 +10,22 @@ import { purgeEverything } from '../lib/purge';
  * by a shared-secret query param (not Cloudflare Access) since this needs to be callable from a
  * deploy script/CLI session, not a browser login. 404s (not 403) on any mismatch or if the secret
  * isn't set, so its existence isn't advertised.
+ *
+ * Purges only pages by default (`purgePages()`), same as an admin write — a code deploy can only
+ * ever change what a page *renders*, never what a previously-resized image looks like. `?full=1`
+ * is an escape hatch to `purgeEverything()` for the rare case something needs a hard reset (e.g.
+ * a change to the cache-tagging scheme itself, which needs one full flush to take effect for
+ * anything cached under the old scheme).
  */
 export const GET: APIRoute = async ({ url }) => {
 	const token = url.searchParams.get('token');
 	if (!env.DEPLOY_PURGE_TOKEN || token !== env.DEPLOY_PURGE_TOKEN) {
 		return new Response('Not found', { status: 404 });
 	}
-	await purgeEverything();
+	if (url.searchParams.get('full') === '1') {
+		await purgeEverything();
+		return new Response('purged everything');
+	}
+	await purgePages();
 	return new Response('purged');
 };

@@ -5,7 +5,7 @@ import { getPieces, updatePieces } from '../../lib/data';
 import { getTagFrequency } from '../../lib/facets';
 import { generateAssetId, generatePieceId, buildAssetKey } from '../../lib/ids';
 import { getImageDimensions } from '../../lib/imageDimensions';
-import { purgeEverything } from '../../lib/purge';
+import { purgePages } from '../../lib/purge';
 import { isAuthorizedAdminRequest } from '../../lib/adminGuard';
 import { backupAsset, backupPieceData, logBackupEvent } from '../../lib/backup';
 import { ASSET_KINDS } from '../../lib/assetKinds';
@@ -165,7 +165,7 @@ if (Astro.request.method === 'POST') {
 			metadataSnapshotTaken,
 			errors: backupErrors
 		}).catch(() => {});
-		await purgeEverything();
+		await purgePages();
 
 		// `?added=1` only ever shows up on this specific redirect — it's how the piece page knows to
 		// show the "Add another piece" shortcut, since right after adding one you're often adding

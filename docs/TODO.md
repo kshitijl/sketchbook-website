@@ -945,5 +945,62 @@ session. Two ways of "fixing" this were proposed and both rejected, worth record
       `/deploy-purge` itself is staying (per the rejection above), so this problem doesn't go away
       on its own — see the matching Open Items entry in docs/architecture.md.
 
+## Resolved: automated deploy, and purging pages without touching the image cache (2026-07-23)
+Two things that came out of the token-persistence discussion above, both actually landed this time.
+
+**Automated deploy — no more manual multi-step dance.** Every deploy used to be: `astro check` →
+`vitest run` → `astro build` → `astro dev` local spot-check → `wrangler deploy` → figure out the
+purge token → curl `/deploy-purge` → wait ~25-30s → re-verify. Explicit feedback: "don't ever do
+this thing again of having some stupid complicated deploy step... make an automated deployment
+command." Fixed:
+- [x] `npm run deploy` is now the one command: `predeploy` (npm's automatic pre-script hook) runs
+      `astro check && vitest run && astro build`, then `wrangler deploy`, then
+      `scripts/deploy-purge.mjs`.
+- [x] `scripts/deploy-purge.mjs` resolves the `DEPLOY_PURGE_TOKEN` problem by never persisting the
+      token at all: generates a fresh random value (`crypto.randomBytes`), sets it as the Worker
+      secret via `wrangler secret put` (piped through stdin, non-interactive), uses it immediately
+      to call `/deploy-purge`, then it's gone — nothing to remember or store across sessions,
+      landing on the approach that had been proposed but not yet implemented.
+- [x] Retries the purge call (up to 8×, 5s apart) rather than failing on the first attempt — a
+      secret rotation is itself a small deploy and can take a few seconds to fully propagate before
+      the new token is recognized everywhere. Found live: the first real run failed outright with
+      the original tighter retry budget (5×4s), which is why it was loosened.
+
+**Purging pages without also nuking the image cache.** Raised directly: shouldn't purging skip
+resized images, since they're immutable and never need it, and could this live in a separate
+Worker so its cache is naturally distinct? Investigated first rather than assuming a new Worker
+was needed — `cache.purge()`'s `CachePurgeOptions` actually supports `tags` and `pathPrefixes`
+alongside `purgeEverything`, so no second Worker/deploy pipeline/routing config was needed at all:
+- [x] Every actual page response now carries `Cache-Tag: page` (`PAGE_CACHE_TAG` in
+      `src/lib/cache.ts`), set together with `Cache-Control` by one new `setPageCacheHeaders()`
+      helper — replacing the old pattern of each page setting `Cache-Control` directly, so a page
+      can't end up cached but untagged (and therefore unpurgeable by tag) by accident. `/admin/*`
+      (`no-store`, never cached anyway) and `/img/*` (its own separately-managed, deliberately
+      immutable `Cache-Control`) never get this tag.
+- [x] `purgeEverything()` → `purgePages()` (`src/lib/purge.ts`): now calls
+      `cache.purge({ tags: [PAGE_CACHE_TAG] })` instead of `{ purgeEverything: true }`. All four
+      admin write handlers (new/edit/favorites/bulk-tag) and `/deploy-purge`'s default path switched
+      to this. `purgeEverything()` itself stays as a rarely-used escape hatch —
+      `/deploy-purge?...&full=1` / `node scripts/deploy-purge.mjs --full` — for the rare case a hard
+      reset is genuinely needed (used exactly once so far: flushing this migration's own old,
+      untagged cache entries).
+- [x] Rejected path-prefix purging (`pathPrefixes: [...]`) as the mechanism instead of tags — it
+      would mean enumerating every non-`/img/` route prefix, reintroducing exactly the "list of
+      affected paths to maintain, easy to forget one when a new route type is added" problem the
+      whole purge-on-write design was built to avoid. Tags don't have this drift risk as long as
+      every page route consistently uses the shared `setPageCacheHeaders()` helper.
+- [x] Verified live against production, not just locally: confirmed `/img/...` responses never
+      carry `Cache-Tag` (so `purgePages()` structurally cannot match them) via `astro dev`; then in
+      production, purged by tag and confirmed the home page's render-id changed (the purge worked)
+      while a `card`-size image's `CF-Cache-Status` stayed `HIT` across that exact same purge (the
+      image cache was untouched) — the direct before/after evidence the split behaves correctly,
+      not just that the code looks right.
+- [x] **Note on `Cache-Tag` visibility**: the header is set on every page response by our own code,
+      but a client fetching an already-cached (`HIT`) page does not see a `Cache-Tag` header back —
+      Cloudflare consumes it internally for purge-matching without necessarily echoing it out on
+      every served hit. This looked like a bug at first (real live debugging moment) until the
+      render-id test above confirmed the underlying purge-by-tag mechanism works regardless of
+      whether the header is visible to the client.
+
 ## Phase 7 — Content migration
 Owner is doing this manually via `/admin/new`, not an agent task.

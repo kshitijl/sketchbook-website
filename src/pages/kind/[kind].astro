@@ -5,10 +5,10 @@ import { getPieces } from '../../lib/data';
 import { getAssetsByKind } from '../../lib/facets';
 import { imageUrl } from '../../lib/images';
 import { ASSET_KINDS } from '../../lib/assetKinds';
-import { PAGE_CACHE_CONTROL } from '../../lib/cache';
+import { setPageCacheHeaders } from '../../lib/cache';
 import type { AssetKind } from '../../lib/types';
 
-Astro.response.headers.set('Cache-Control', PAGE_CACHE_CONTROL);
+setPageCacheHeaders(Astro.response.headers);
 
 const { kind } = Astro.params;
 const isValidKind = (k: string | undefined): k is AssetKind =>

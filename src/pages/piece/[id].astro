@@ -4,9 +4,9 @@ import Base from '../../layouts/Base.astro';
 import { getPieces } from '../../lib/data';
 import { getPieceById, getPrimaryAsset, orderAssetsFinalFirst } from '../../lib/facets';
 import { imageUrl, originalImageUrl } from '../../lib/images';
-import { PAGE_CACHE_CONTROL } from '../../lib/cache';
+import { setPageCacheHeaders } from '../../lib/cache';
 
-Astro.response.headers.set('Cache-Control', PAGE_CACHE_CONTROL);
+setPageCacheHeaders(Astro.response.headers);
 
 const { id } = Astro.params;
 const { data } = await getPieces(env.ART_BUCKET);

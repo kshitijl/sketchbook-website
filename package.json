@@ -11,7 +11,9 @@
     "preview": "astro preview",
     "astro": "astro",
     "generate-types": "wrangler types",
-    "test": "vitest run"
+    "test": "vitest run",
+    "predeploy": "astro check && vitest run && astro build",
+    "deploy": "wrangler deploy && node scripts/deploy-purge.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.1.4",

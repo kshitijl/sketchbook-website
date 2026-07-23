@@ -4,9 +4,9 @@ import Base from '../../layouts/Base.astro';
 import PieceList from '../../components/PieceList.astro';
 import { getPieces } from '../../lib/data';
 import { getPiecesByTag } from '../../lib/facets';
-import { PAGE_CACHE_CONTROL } from '../../lib/cache';
+import { setPageCacheHeaders } from '../../lib/cache';
 
-Astro.response.headers.set('Cache-Control', PAGE_CACHE_CONTROL);
+setPageCacheHeaders(Astro.response.headers);
 
 const { slug } = Astro.params;
 const { data } = await getPieces(env.ART_BUCKET);
