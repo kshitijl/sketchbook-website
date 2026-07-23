@@ -41,8 +41,9 @@ export interface PieceFormOptions {
 	autoUseCurrentLocation?: boolean;
 }
 
-/** Wires up the location map, tag-frequency chips, asset previews, and filename-derived
- * title/date suggestions shared by the new-piece and edit-piece admin forms. */
+/** Wires up the location map, tag-frequency chips, asset previews, per-file kind tagging on the
+ * "additional photos" input, and filename-derived title/date suggestions shared by the new-piece
+ * and edit-piece admin forms. */
 export function setupPieceForm(options: PieceFormOptions = {}): void {
 	setupLocationPicker(options);
 	setupAssetPreviews();

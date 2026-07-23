@@ -1,9 +1,10 @@
 import type { AssetKind } from './types';
 
-/** Human-readable label for every asset kind — used by the edit form's per-asset kind selector
- * and the /kind/<kind> page header. `unsorted` is the default kind for newly-uploaded "additional
- * photos": upload everything in one go, then come back and tag each one afterward, rather than
- * having to pick a kind per photo while still in the photos app. */
+/** Human-readable label for every asset kind — used by the "additional photos" kind selector shown
+ * at upload time, the edit form's per-asset re-kind selector, and the /kind/<kind> page header.
+ * `unsorted` is the fallback kind for an "additional photo" uploaded without a kind actually picked
+ * (missing/invalid `kind_extra_<i>` field) — normally every photo gets tagged with a real kind
+ * immediately at selection time, not left as `unsorted` to sort out later. */
 export const ASSET_KIND_LABELS: Record<AssetKind, string> = {
 	final: 'Final piece',
 	unsorted: 'Unsorted',

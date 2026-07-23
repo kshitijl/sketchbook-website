@@ -8,12 +8,12 @@ standing preference, not a one-off complaint — every future change in this cod
 weighed against it, not just the items below.
 - [ ] Remove the `ADMIN_EMAIL`/`isAuthorizedAdminRequest()` defense-in-depth check
       (`src/lib/adminGuard.ts`, called from `admin/new.astro`, `admin/edit/[id].astro`,
-      `admin/favorites.astro`). Flagged by the owner as pointless complexity: Cloudflare Access is
-      the real gate and already fully verified working (a `302` to login for any unauthenticated
-      request, before the Worker even runs) — this second in-app check is redundant belt-and-braces
-      the owner doesn't want. Removing it also deletes `src/env.d.ts` (the declaration-merge file
-      that only exists to type `ADMIN_EMAIL` as a secret) and the `ADMIN_EMAIL` Worker secret
-      itself, and simplifies all three call sites.
+      `admin/favorites.astro`, `admin/bulk-tag.astro`). Flagged by the owner as pointless
+      complexity: Cloudflare Access is the real gate and already fully verified working (a `302` to
+      login for any unauthenticated request, before the Worker even runs) — this second in-app check
+      is redundant belt-and-braces the owner doesn't want. Removing it also deletes `src/env.d.ts`
+      (the declaration-merge file that only exists to type `ADMIN_EMAIL` as a secret) and the
+      `ADMIN_EMAIL` Worker secret itself, and simplifies all four call sites.
 - [ ] Full pass over the codebase and `docs/architecture.md`/this file for other pointless
       complexity introduced without being asked for — abstractions, tests, defensive checks, or
       "nice to have" infrastructure the owner never actually requested. Go looking for it
