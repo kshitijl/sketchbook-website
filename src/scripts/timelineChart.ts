@@ -12,13 +12,18 @@ interface TimelineMonth {
 	pieces: TimelinePiece[];
 }
 
-/** Activity bar chart, one bar per month (built server-side in index.astro). Clicking a bar picks
- * a month and shows its pieces in the gallery frame below; prev/next page through that month when
- * it has more than one. The bars themselves are the "what have I been doing" visual — this script
- * only handles selection, not any drawing. */
+/** Two-level activity bar chart (built server-side in index.astro): year bars by default, drill
+ * into a year to see its (at most 12) month bars — bounded at both levels so bars stay comfortably
+ * tappable no matter how many years of pieces pile up, unlike one flat row of every month ever.
+ * Clicking a month bar picks it and shows its pieces in the gallery frame below; prev/next page
+ * through that month when it has more than one. The bars themselves are the "what have I been
+ * doing" visual — this script only handles selection/drill-down, not any drawing. */
 export function setupTimelineChart(): void {
 	const dataEl = document.getElementById('timeline-data');
-	const chart = document.getElementById('timeline-chart');
+	const yearsSection = document.getElementById('timeline-years');
+	const monthsSection = document.getElementById('timeline-months');
+	const yearLabel = document.getElementById('timeline-year-label');
+	const backBtn = document.getElementById('timeline-back');
 	const img = document.getElementById('timeline-image') as HTMLImageElement | null;
 	const link = document.getElementById('timeline-piece-link') as HTMLAnchorElement | null;
 	const captionLink = document.getElementById('timeline-caption') as HTMLAnchorElement | null;
@@ -27,14 +32,40 @@ export function setupTimelineChart(): void {
 	const hint = document.getElementById('timeline-hint');
 	const prevBtn = document.getElementById('timeline-prev') as HTMLButtonElement | null;
 	const nextBtn = document.getElementById('timeline-next') as HTMLButtonElement | null;
-	if (!dataEl || !chart || !img || !link || !captionLink || !monthLabel || !title || !hint || !prevBtn || !nextBtn) return;
+	if (
+		!dataEl ||
+		!yearsSection ||
+		!monthsSection ||
+		!yearLabel ||
+		!backBtn ||
+		!img ||
+		!link ||
+		!captionLink ||
+		!monthLabel ||
+		!title ||
+		!hint ||
+		!prevBtn ||
+		!nextBtn
+	) {
+		return;
+	}
 
 	const byMonth: Record<string, TimelineMonth> = JSON.parse(dataEl.textContent || '{}');
-	const bars = [...chart.querySelectorAll<HTMLButtonElement>('.timeline-bar:not(:disabled)')];
-	if (bars.length === 0) return;
+	const yearBars = [...yearsSection.querySelectorAll<HTMLButtonElement>('.timeline-bar')];
+	const monthGroups = [...monthsSection.querySelectorAll<HTMLElement>('.timeline-month-group')];
+	const monthBars = [...monthsSection.querySelectorAll<HTMLButtonElement>('.timeline-bar:not(:disabled)')];
+	if (monthBars.length === 0) return;
 
-	let month = bars[bars.length - 1].dataset.month!; // open on the most recent non-empty month
+	let month = monthBars[monthBars.length - 1].dataset.month!; // open on the most recent non-empty month
 	let pieceIndex = 0;
+
+	function showYear(year: string) {
+		for (const group of monthGroups) group.classList.toggle('timeline-hidden', group.dataset.year !== year);
+		for (const bar of yearBars) bar.classList.toggle('selected', bar.dataset.year === year);
+		yearLabel!.textContent = year;
+		yearsSection!.classList.add('timeline-hidden');
+		monthsSection!.classList.remove('timeline-hidden');
+	}
 
 	function render() {
 		const bucket = byMonth[month];
@@ -58,10 +89,18 @@ export function setupTimelineChart(): void {
 		prevBtn!.hidden = count <= 1;
 		nextBtn!.hidden = count <= 1;
 
-		for (const bar of bars) bar.classList.toggle('selected', bar.dataset.month === month);
+		for (const bar of monthBars) bar.classList.toggle('selected', bar.dataset.month === month);
 	}
 
-	for (const bar of bars) {
+	for (const bar of yearBars) {
+		if (bar.disabled) continue;
+		bar.addEventListener('click', () => showYear(bar.dataset.year!));
+	}
+	backBtn.addEventListener('click', () => {
+		monthsSection!.classList.add('timeline-hidden');
+		yearsSection!.classList.remove('timeline-hidden');
+	});
+	for (const bar of monthBars) {
 		bar.addEventListener('click', () => {
 			month = bar.dataset.month!;
 			pieceIndex = 0;
@@ -82,9 +121,9 @@ export function setupTimelineChart(): void {
 	});
 
 	render();
-
-	// The chart opens on the most recent month, which is the rightmost bar — without this it'd be
-	// scrolled off-screen to the right on load behind `.timeline-scroll`'s default scrollLeft of 0.
-	const scroller = chart.closest<HTMLElement>('.timeline-scroll');
-	if (scroller) scroller.scrollLeft = scroller.scrollWidth;
+	// Land on the years view (per the design), but mark the year containing the initially-selected
+	// (most recent) month as selected, so it's clear at a glance which year that piece is from —
+	// without actually drilling in and hiding the year row.
+	const initialYear = month.slice(0, 4);
+	for (const bar of yearBars) bar.classList.toggle('selected', bar.dataset.year === initialYear);
 }

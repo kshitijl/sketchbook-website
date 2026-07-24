@@ -428,22 +428,21 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 				margin: 1.5rem 0 0.35rem;
 			}
 
-			/* Timeline activity bar chart: one bar per month (built server-side in index.astro),
-			   each a vertical flex stack of medium-colored segments that pile up from the baseline.
-			   Segment colors are a validated categorical pair (blue = wet media, sepia = dry media)
-			   plus a neutral for "other" — see the dataviz palette check in the timeline work.
-			   Bars are a fixed width (--bar-w), not "container width / month count" — with years of
-			   history that division only gets thinner as more months are added. `.timeline-scroll`
-			   scrolls chart + axis together so they can't drift out of alignment with each other. */
-			.timeline-scroll {
-				overflow-x: auto;
-				overflow-y: hidden;
+			/* Timeline activity bar chart (built server-side in index.astro): a row of year bars by
+			   default, each a vertical flex stack of medium-colored segments that pile up from the
+			   baseline; clicking a year swaps in its own row of at most 12 month bars. Both rows are
+			   naturally bounded (years grow by one a year; a drilled-in row is never more than 12),
+			   so equal-width flex bars stay comfortably tappable regardless of how much history piles
+			   up — unlike one flat row of every month ever, which only gets thinner with each passing
+			   year. Segment colors are a validated categorical pair (blue = wet media, sepia = dry
+			   media) plus a neutral for "other" — see the dataviz palette check in the timeline work. */
+			.timeline-hidden {
+				display: none;
 			}
 			.timeline-chart {
 				display: flex;
 				align-items: flex-end;
 				gap: 2px;
-				width: max-content;
 				height: var(--chart-h);
 				margin: 0.5rem 0 0;
 				border-bottom: 2px solid var(--border);
@@ -451,8 +450,8 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 			.timeline-bar {
 				/* Override the global dark filled-button style — a bar is a transparent track that
 				   holds the colored fills, not a button-looking box. */
-				flex: 0 0 var(--bar-w);
-				width: var(--bar-w);
+				flex: 1;
+				min-width: 0;
 				height: 100%;
 				display: flex;
 				flex-direction: column;
@@ -497,16 +496,29 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 			.timeline-axis {
 				display: flex;
 				gap: 2px;
-				width: max-content;
 				margin-top: 0.25rem;
 				font-family: var(--mono);
 				font-size: 0.65rem;
 				color: var(--text-muted);
 			}
 			.timeline-axis .tick {
-				flex: 0 0 var(--bar-w);
-				width: var(--bar-w);
+				flex: 1;
+				min-width: 0;
 				white-space: nowrap;
+				text-align: center;
+			}
+			.timeline-month-group {
+				margin-top: 0.5rem;
+			}
+			#timeline-back {
+				font-family: var(--mono);
+				text-transform: uppercase;
+				font-size: 0.75rem;
+				padding: 0.3rem 0.6rem;
+			}
+			#timeline-year-label {
+				font-family: var(--mono);
+				font-size: 0.9rem;
 			}
 			.timeline-legend {
 				display: flex;
