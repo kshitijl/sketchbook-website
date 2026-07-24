@@ -268,7 +268,7 @@ const timelineJson = JSON.stringify({
 			<div id="timeline-months" class="timeline-hidden">
 				<p>
 					<button type="button" id="timeline-back">&larr; All years</button>
-					{' '}<strong id="timeline-year-label"></strong>
+					{' '}<button type="button" id="timeline-year-label"></button>
 				</p>
 				{years.map((year) => (
 					<div class="timeline-month-group timeline-hidden" data-year={year}>

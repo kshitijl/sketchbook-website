@@ -4,7 +4,7 @@ x link in intro blurb to first marks and first india trips pages. for these link
 
 x tag pages should say at the top the number of pieces that match that tag
 
-timeline rectangles too thin
+x timeline rectangles too thin
 
 add 1 piece at least from england, mexico and panama
 

@@ -113,14 +113,19 @@ export function setupTimelineChart(): void {
 		for (const bar of monthBars) bar.classList.toggle('selected', bar.dataset.month === selectedMonth);
 	}
 
+	function showYears() {
+		monthsSection!.classList.add('timeline-hidden');
+		yearsSection!.classList.remove('timeline-hidden');
+	}
+
 	for (const bar of yearBars) {
 		if (bar.disabled) continue;
 		bar.addEventListener('click', () => showYear(bar.dataset.year!));
 	}
-	backBtn.addEventListener('click', () => {
-		monthsSection!.classList.add('timeline-hidden');
-		yearsSection!.classList.remove('timeline-hidden');
-	});
+	backBtn.addEventListener('click', showYears);
+	// The year label itself (next to "← All years") is the same "go back" action — a second, more
+	// direct place to click while already looking right at the year you're in.
+	yearLabel.addEventListener('click', showYears);
 	for (const bar of monthBars) {
 		bar.addEventListener('click', () => {
 			selectedMonth = bar.dataset.month!;
