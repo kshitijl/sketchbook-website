@@ -274,14 +274,14 @@ if (Astro.request.method === 'POST') {
 			<label>Notes<br /><textarea name="notes" rows="4" cols="50">{values.notes}</textarea></label>
 		</p>
 
-		<details>
-			<summary>Additional photos (optional) — reference, in-progress, value study, setup, whatever</summary>
+		<p>
+			<strong>Additional photos (optional)</strong> — reference, in-progress, value study, setup, whatever
 			<div class="dropzone" data-drop-for="extraAssetInput">
 				<em>Select as many as you want (or drag them here), then tag each one below.</em><br />
 				<input type="file" id="extraAssetInput" name="asset_extra" accept="image/*" multiple style="margin-top:0.5rem;" />
 				<div id="extraAssetList"></div>
 			</div>
-		</details>
+		</p>
 
 		<p><button type="submit">Save</button></p>
 		<!-- Per-step progress + error messages during save, written by pieceForm.ts. -->
