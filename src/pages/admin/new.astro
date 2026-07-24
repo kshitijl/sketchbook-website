@@ -3,6 +3,7 @@ import { env } from 'cloudflare:workers';
 import Base from '../../layouts/Base.astro';
 import { getPieces, updatePieces } from '../../lib/data';
 import { getTagFrequency } from '../../lib/facets';
+import { categoryForTag, TAG_CATEGORIES } from '../../lib/tagCategories';
 import { generateAssetId, generatePieceId, buildAssetKey } from '../../lib/ids';
 import { getImageDimensions } from '../../lib/imageDimensions';
 import { getVariantFiles } from '../../lib/images';
@@ -16,6 +17,9 @@ Astro.response.headers.set('Cache-Control', 'no-store');
 
 const { data: currentData } = await getPieces(env.ART_BUCKET);
 const tagFrequency = getTagFrequency(currentData);
+// Previously-used tags that don't fall into any hardcoded category — still shown, just as one
+// flat frequency-sorted cloud rather than a category group, same as before this feature existed.
+const otherTags = tagFrequency.filter(({ tag }) => !categoryForTag(tag));
 
 const todayISO = new Date().toISOString().slice(0, 10);
 
@@ -248,10 +252,21 @@ if (Astro.request.method === 'POST') {
 		<p>
 			<label>Tags (comma-separated)<br /><textarea id="tagsInput" name="tags" rows="3" style="width:100%;">{values.tags}</textarea></label>
 		</p>
-		{tagFrequency.length > 0 && (
+		{TAG_CATEGORIES.map((category) => (
 			<p>
-				{tagFrequency.map(({ tag, count }) => (
-					<button type="button" class="tag-chip" data-tag={tag} style="margin:0 0.25rem 0.25rem 0;">
+				<strong>{category.name}:</strong><br />
+				{category.tags.map((tag) => (
+					<button type="button" class="tag-chip" data-tag={tag} style="margin:0.25rem 0.25rem 0 0;">
+						{tag}
+					</button>
+				))}
+			</p>
+		))}
+		{otherTags.length > 0 && (
+			<p>
+				<strong>Other tags:</strong><br />
+				{otherTags.map(({ tag, count }) => (
+					<button type="button" class="tag-chip" data-tag={tag} style="margin:0.25rem 0.25rem 0 0;">
 						{tag} ({count})
 					</button>
 				))}

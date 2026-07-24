@@ -6,6 +6,7 @@ import { getPieces } from '../lib/data';
 import { getPaintingStats, getPiecesByDateDescending, getPrimaryAsset, getRandomPieces, getTagFrequency } from '../lib/facets';
 import { imageUrl } from '../lib/images';
 import { setPageCacheHeaders } from '../lib/cache';
+import { categoryForTag, TAG_CATEGORIES } from '../lib/tagCategories';
 import type { Piece } from '../lib/types';
 
 setPageCacheHeaders(Astro.response.headers);
@@ -36,6 +37,14 @@ const randoms = getRandomPieces(data.pieces, 12, shown);
 
 const tagFrequency = getTagFrequency(data);
 const maxTagCount = tagFrequency[0]?.count ?? 1;
+// Grouped by the same hardcoded categories as the admin tag pickers, so viewers get the same
+// structured exploration (medium/trip/subject/etc.) instead of one flat cloud — anything not in a
+// category still shows up, just under "Other" rather than vanishing.
+const groupedTags = TAG_CATEGORIES.map((category) => ({
+	name: category.name,
+	tags: tagFrequency.filter(({ tag }) => categoryForTag(tag) === category.name)
+})).filter((group) => group.tags.length > 0);
+const otherTags = tagFrequency.filter(({ tag }) => !categoryForTag(tag));
 
 // Map data — escape `<` so a stray `</script>` inside a title/notes field can't break out of
 // this tag.
@@ -220,17 +229,38 @@ const timelineJson = JSON.stringify({
 	{tagFrequency.length > 0 && (
 		<section>
 			<h2>Tags</h2>
-			<p>
-				{tagFrequency.map(({ tag, count }) => (
-					<a
-						class="tag-chip"
-						style={`display:inline-block; margin:0 0.4rem 0.4rem 0; font-size:${(0.7 + (count / maxTagCount) * 0.6).toFixed(2)}rem;`}
-						href={`/tag/${encodeURIComponent(tag)}`}
-					>
-						#{tag}
-					</a>
-				))}
-			</p>
+			{groupedTags.map((group) => (
+				<>
+					<p class="section-label">{group.name}</p>
+					<p>
+						{group.tags.map(({ tag, count }) => (
+							<a
+								class="tag-chip"
+								style={`display:inline-block; margin:0 0.4rem 0.4rem 0; font-size:${(0.7 + (count / maxTagCount) * 0.6).toFixed(2)}rem;`}
+								href={`/tag/${encodeURIComponent(tag)}`}
+							>
+								#{tag}
+							</a>
+						))}
+					</p>
+				</>
+			))}
+			{otherTags.length > 0 && (
+				<>
+					<p class="section-label">Other</p>
+					<p>
+						{otherTags.map(({ tag, count }) => (
+							<a
+								class="tag-chip"
+								style={`display:inline-block; margin:0 0.4rem 0.4rem 0; font-size:${(0.7 + (count / maxTagCount) * 0.6).toFixed(2)}rem;`}
+								href={`/tag/${encodeURIComponent(tag)}`}
+							>
+								#{tag}
+							</a>
+						))}
+					</p>
+				</>
+			)}
 		</section>
 	)}
 
