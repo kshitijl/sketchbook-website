@@ -472,7 +472,9 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 				outline-offset: -2px;
 			}
 			.timeline-bar:disabled {
-				cursor: not-allowed;
+				/* Same pointer as any other bar — only the hover tint below (not the cursor) marks
+				   it as empty. A "not-allowed" stop-sign cursor read as too harsh/jarring here. */
+				cursor: pointer;
 			}
 			.timeline-bar:disabled:hover {
 				/* Without this, an empty bar's hover falls through to the global button:hover's
