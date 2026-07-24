@@ -82,12 +82,19 @@ function timelineMedium(tags: string[]): TimelineMedium {
 }
 
 const monthBuckets = new Map<string, { pieces: Piece[]; gouache: number; watercolor: number; sketchbook: number; other: number }>();
+// Pieces grouped by year too (not just derived from monthBuckets) — clicking into a year browses
+// every piece that year in the gallery frame below, not just whichever month you then click.
+const yearPieces = new Map<number, Piece[]>();
 for (const piece of allByDate) {
 	const month = piece.date.slice(0, 7); // "YYYY-MM"
+	const year = Number(piece.date.slice(0, 4));
 	const bucket = monthBuckets.get(month) ?? { pieces: [], gouache: 0, watercolor: 0, sketchbook: 0, other: 0 };
 	bucket.pieces.push(piece);
 	bucket[timelineMedium(piece.tags)] += 1;
 	monthBuckets.set(month, bucket);
+	const piecesThisYear = yearPieces.get(year) ?? [];
+	piecesThisYear.push(piece);
+	yearPieces.set(year, piecesThisYear);
 }
 
 const presentMonths = [...monthBuckets.keys()].sort();
@@ -148,32 +155,40 @@ const yearBars = years.map((year) => {
 	return { year, total: agg.total, segs };
 });
 
-// Per-month piece data for the gallery frame, keyed by month — only the non-empty months need it.
-// Escape `<` so a stray `</script>` inside a title/notes field can't break out of this tag.
-const timelineJson = JSON.stringify(
-	Object.fromEntries(
+function toTimelinePieces(pieces: Piece[]) {
+	return pieces.map((p) => {
+		const asset = getPrimaryAsset(p);
+		return {
+			id: p.id,
+			title: p.title,
+			date: p.date,
+			imageUrl: asset ? imageUrl(asset, 'card') : '',
+			placeName: p.location.placeName,
+			extra: p.assets.filter((a) => a.kind !== 'final').length
+		};
+	});
+}
+
+// Piece data for the gallery frame, keyed two ways — by month (clicking a specific month bar) and
+// by year (clicking a year bar browses every piece that year, before/without picking a month) —
+// only the non-empty buckets need entries. Escape `<` so a stray `</script>` inside a
+// title/notes field can't break out of this tag.
+const timelineJson = JSON.stringify({
+	months: Object.fromEntries(
 		monthKeys
 			.filter((month) => monthBuckets.has(month))
 			.map((month) => {
 				const bucket = monthBuckets.get(month)!;
 				const [y, m] = month.split('-').map(Number);
-				return [month, {
-					label: `${MONTH_NAMES[m - 1]} ${y}`,
-					pieces: bucket.pieces.map((p) => {
-						const asset = getPrimaryAsset(p);
-						return {
-							id: p.id,
-							title: p.title,
-							date: p.date,
-							imageUrl: asset ? imageUrl(asset, 'card') : '',
-							placeName: p.location.placeName,
-							extra: p.assets.filter((a) => a.kind !== 'final').length
-						};
-					})
-				}];
+				return [month, { label: `${MONTH_NAMES[m - 1]} ${y}`, pieces: toTimelinePieces(bucket.pieces) }];
 			})
+	),
+	years: Object.fromEntries(
+		years
+			.filter((year) => yearPieces.has(year))
+			.map((year) => [String(year), { label: String(year), pieces: toTimelinePieces(yearPieces.get(year)!) }])
 	)
-).replace(/</g, '\\u003c');
+}).replace(/</g, '\\u003c');
 ---
 
 <Base title="Lauria's Sketchbook">
@@ -220,7 +235,7 @@ const timelineJson = JSON.stringify(
 	{bars.length > 0 && (
 		<section>
 			<h2>Timeline</h2>
-			<p><em>How much I've been making, year by year — click a year to see its months.</em></p>
+			<p><em>How much I've been making, year by year — click a year to browse everything from it, or drill into a specific month.</em></p>
 			<div class="timeline-legend">
 				<span><i class="swatch seg-gouache"></i>gouache</span>
 				<span><i class="swatch seg-watercolor"></i>watercolor</span>
@@ -294,8 +309,8 @@ const timelineJson = JSON.stringify(
 				<span class="carousel-hint" id="timeline-hint"></span>
 			</a>
 			<div class="carousel-nav">
-				<button id="timeline-prev" type="button" aria-label="Previous piece this month">‹</button>
-				<button id="timeline-next" type="button" aria-label="Next piece this month">›</button>
+				<button id="timeline-prev" class="carousel-prev" type="button" aria-label="Previous piece">‹</button>
+				<button id="timeline-next" class="carousel-next" type="button" aria-label="Next piece">›</button>
 			</div>
 		</section>
 	)}
