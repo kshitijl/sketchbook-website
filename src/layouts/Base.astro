@@ -472,7 +472,14 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 				outline-offset: -2px;
 			}
 			.timeline-bar:disabled {
-				cursor: default;
+				cursor: not-allowed;
+			}
+			.timeline-bar:disabled:hover {
+				/* Without this, an empty bar's hover falls through to the global button:hover's
+				   electric pink (that rule isn't scoped off disabled buttons) — confusing, since
+				   pink elsewhere always means "selected"/interactive. A dimmer, plain gray tint
+				   still confirms the hover registered without implying there's anything to click. */
+				background: rgba(20, 20, 20, 0.03);
 			}
 			.timeline-bar .seg {
 				display: block;
