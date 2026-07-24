@@ -65,20 +65,26 @@ export function setupTimelineChart(): void {
 
 	let bucket: TimelineBucket = byMonth[monthBars[monthBars.length - 1].dataset.month!]; // open on the most recent non-empty month
 	let selectedMonth = monthBars[monthBars.length - 1].dataset.month!;
+	let currentYear = selectedMonth.slice(0, 4);
 	let pieceIndex = 0;
+
+	// Browse every piece in a year — deselects whichever month was picked, if any. This is also
+	// what clicking the year label (while already drilled into one of its months) does: "go back
+	// up" from a specific month to the whole year, without leaving the drilled-in month-bars view.
+	function browseYear(year: string) {
+		currentYear = year;
+		selectedMonth = '';
+		for (const bar of monthBars) bar.classList.remove('selected');
+		for (const bar of yearBars) bar.classList.toggle('selected', bar.dataset.year === year);
+		setBucket(byYear[year]);
+	}
 
 	function showYear(year: string) {
 		for (const group of monthGroups) group.classList.toggle('timeline-hidden', group.dataset.year !== year);
-		for (const bar of yearBars) bar.classList.toggle('selected', bar.dataset.year === year);
 		yearLabel!.textContent = year;
 		yearsSection!.classList.add('timeline-hidden');
 		monthsSection!.classList.remove('timeline-hidden');
-
-		// Browse every piece that year immediately — picking a specific month (below) narrows it
-		// down further, but drilling in shouldn't require picking a month first just to look around.
-		selectedMonth = '';
-		for (const bar of monthBars) bar.classList.remove('selected');
-		setBucket(byYear[year]);
+		browseYear(year);
 	}
 
 	function setBucket(next: TimelineBucket | undefined) {
@@ -123,9 +129,10 @@ export function setupTimelineChart(): void {
 		bar.addEventListener('click', () => showYear(bar.dataset.year!));
 	}
 	backBtn.addEventListener('click', showYears);
-	// The year label itself (next to "← All years") is the same "go back" action — a second, more
-	// direct place to click while already looking right at the year you're in.
-	yearLabel.addEventListener('click', showYears);
+	// Clicking the year label (while drilled into a month) goes "up" one level — from that specific
+	// month back to browsing the whole year — without leaving the drilled-in month-bars view. It's
+	// not the same action as "← All years", which leaves this view entirely.
+	yearLabel.addEventListener('click', () => browseYear(currentYear));
 	for (const bar of monthBars) {
 		bar.addEventListener('click', () => {
 			selectedMonth = bar.dataset.month!;
@@ -147,6 +154,5 @@ export function setupTimelineChart(): void {
 	// Land on the years view (per the design), but mark the year containing the initially-selected
 	// (most recent) month as selected, so it's clear at a glance which year that piece is from —
 	// without actually drilling in and hiding the year row.
-	const initialYear = selectedMonth.slice(0, 4);
-	for (const bar of yearBars) bar.classList.toggle('selected', bar.dataset.year === initialYear);
+	for (const bar of yearBars) bar.classList.toggle('selected', bar.dataset.year === currentYear);
 }
