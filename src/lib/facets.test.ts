@@ -11,7 +11,10 @@ import {
 	getPiecesByPlace,
 	getTagFrequency,
 	isPainting,
-	getPaintingStats
+	getPaintingStats,
+	distanceMiles,
+	getNearbyPieces,
+	getTimelineNeighbors
 } from './facets';
 import type { Piece, PiecesData } from './types';
 
@@ -212,6 +215,63 @@ describe('isPainting', () => {
 
 	it('counts a finished mixed ink+watercolor piece (checks tag directly, not classifyMedium)', () => {
 		expect(isPainting(makePiece({ stage: 'finished', tags: ['ink', 'watercolor'] }))).toBe(true);
+	});
+});
+
+describe('distanceMiles', () => {
+	it('is zero for identical points', () => {
+		expect(distanceMiles({ lat: 40.7, lng: -74, placeName: '' }, { lat: 40.7, lng: -74, placeName: '' })).toBe(0);
+	});
+
+	it('roughly matches known distance between two cities (NYC to Philadelphia, ~80mi)', () => {
+		const nyc = { lat: 40.7128, lng: -74.006, placeName: '' };
+		const philly = { lat: 39.9526, lng: -75.1652, placeName: '' };
+		expect(distanceMiles(nyc, philly)).toBeGreaterThan(75);
+		expect(distanceMiles(nyc, philly)).toBeLessThan(85);
+	});
+});
+
+describe('getNearbyPieces', () => {
+	it('sorts by distance ascending and excludes the piece itself', () => {
+		const origin = makePiece({ id: 'origin', location: { lat: 0, lng: 0, placeName: '' } });
+		const near = makePiece({ id: 'near', location: { lat: 0.1, lng: 0, placeName: '' } });
+		const far = makePiece({ id: 'far', location: { lat: 10, lng: 0, placeName: '' } });
+		const result = getNearbyPieces([origin, near, far], origin, 10, 10000);
+		expect(result.map((n) => n.piece.id)).toEqual(['near', 'far']);
+	});
+
+	it('caps at maxMiles even if fewer than maxCount pieces qualify', () => {
+		const origin = makePiece({ id: 'origin', location: { lat: 0, lng: 0, placeName: '' } });
+		const near = makePiece({ id: 'near', location: { lat: 0.1, lng: 0, placeName: '' } });
+		const far = makePiece({ id: 'far', location: { lat: 10, lng: 0, placeName: '' } });
+		const result = getNearbyPieces([origin, near, far], origin, 10, 50);
+		expect(result.map((n) => n.piece.id)).toEqual(['near']);
+	});
+
+	it('caps at maxCount even if more pieces qualify within maxMiles', () => {
+		const origin = makePiece({ id: 'origin', location: { lat: 0, lng: 0, placeName: '' } });
+		const a = makePiece({ id: 'a', location: { lat: 0.1, lng: 0, placeName: '' } });
+		const b = makePiece({ id: 'b', location: { lat: 0.2, lng: 0, placeName: '' } });
+		const result = getNearbyPieces([origin, a, b], origin, 1, 10000);
+		expect(result.map((n) => n.piece.id)).toEqual(['a']);
+	});
+});
+
+describe('getTimelineNeighbors', () => {
+	it('returns up to N chronological neighbors on each side', () => {
+		const pieces = ['2020-01-01', '2021-01-01', '2022-01-01', '2023-01-01', '2024-01-01'].map((date, i) =>
+			makePiece({ id: `p${i}`, date })
+		);
+		const result = getTimelineNeighbors(pieces, pieces[2], 3, 3);
+		expect(result.before.map((p) => p.id)).toEqual(['p0', 'p1']);
+		expect(result.after.map((p) => p.id)).toEqual(['p3', 'p4']);
+	});
+
+	it('truncates at the ends of the timeline instead of erroring', () => {
+		const pieces = ['2020-01-01', '2021-01-01'].map((date, i) => makePiece({ id: `p${i}`, date }));
+		const result = getTimelineNeighbors(pieces, pieces[0], 3, 3);
+		expect(result.before).toEqual([]);
+		expect(result.after.map((p) => p.id)).toEqual(['p1']);
 	});
 });
 

@@ -1,28 +1,16 @@
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-// Same fix as src/scripts/mapPage.ts: Leaflet's default marker icon resolves its image relative
-// to its own CSS file at runtime, which breaks once bundled by Vite (shows up as a broken-image
-// box with cut-off alt text instead of a pin) — and `?url` matters specifically because without
-// it, Astro's own asset pipeline intercepts the .png import into an `{src,width,height}` object
-// instead of a plain URL string, which is what iconUrl actually needs.
-import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png?url';
-import markerIcon from 'leaflet/dist/images/marker-icon.png?url';
-import markerShadow from 'leaflet/dist/images/marker-shadow.png?url';
 import { heicTo, isHeic } from 'heic-to';
 import Pica from 'pica';
 import { SIZE_WIDTHS } from '../lib/images';
+import { fixLeafletDefaultIcon } from './leafletIcons';
 
 // One shared instance. Pica does Lanczos downscaling (sharper than a plain canvas draw) and tiles
 // large sources internally, so it avoids Safari's canvas-area limit on big scans. No SharedArrayBuffer
 // / cross-origin isolation needed (unlike wasm-vips), so it doesn't affect the admin map/geocoding.
 const pica = Pica();
 
-delete (L.Icon.Default.prototype as { _getIconUrl?: unknown })._getIconUrl;
-L.Icon.Default.mergeOptions({
-	iconRetinaUrl: markerIcon2x,
-	iconUrl: markerIcon,
-	shadowUrl: markerShadow
-});
+fixLeafletDefaultIcon();
 
 interface NominatimReverseResult {
 	display_name?: string;

@@ -7,29 +7,12 @@ import 'leaflet/dist/leaflet.css';
 // content just never made it into any emitted CSS chunk, seemingly a bundler quirk). Inlined
 // directly into Base.astro's global stylesheet instead — see the comment there.
 import 'leaflet.markercluster';
-// Leaflet's default marker icon resolves its image URLs relative to its own CSS file at runtime,
-// which breaks once bundled by Vite — the icon's <img> 404s, which is what showed up live as a
-// broken-image box with cut-off alt text instead of an actual pin. Pointing it at the
-// bundler-resolved asset URLs directly is the standard fix for Leaflet under Vite/Rollup.
-//
-// The `?url` suffix matters, and was the actual remaining bug after the first attempt at this
-// fix: without it, Astro's built-in asset pipeline intercepts every image import project-wide
-// (even in a plain .ts file, not just .astro components) and hands back an
-// `{ src, width, height, format }` metadata object instead of a plain string — `iconUrl` needs a
-// string, and Leaflet has no idea to unwrap `.src` from something built for Astro's own <Image>.
-import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png?url';
-import markerIcon from 'leaflet/dist/images/marker-icon.png?url';
-import markerShadow from 'leaflet/dist/images/marker-shadow.png?url';
 import { imageUrl } from '../lib/images';
 import { getPrimaryAsset, orderAssetsFinalFirst } from '../lib/facets';
+import { fixLeafletDefaultIcon } from './leafletIcons';
 import type { Piece } from '../lib/types';
 
-delete (L.Icon.Default.prototype as { _getIconUrl?: unknown })._getIconUrl;
-L.Icon.Default.mergeOptions({
-	iconRetinaUrl: markerIcon2x,
-	iconUrl: markerIcon,
-	shadowUrl: markerShadow
-});
+fixLeafletDefaultIcon();
 
 /** Escapes untrusted text for safe interpolation into innerHTML — this data ultimately comes
  * from the site owner's own admin form, but the click-to-detail panel is built via innerHTML, so

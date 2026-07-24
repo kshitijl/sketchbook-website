@@ -18,6 +18,9 @@ const pieces = slug ? getPiecesByTag(data, slug) : [];
 	{pieces.length === 0 ? (
 		<p><em>No pieces tagged #{slug} yet.</em></p>
 	) : (
-		<PieceList pieces={pieces} large />
+		<>
+			<p><em>{pieces.length} piece{pieces.length === 1 ? '' : 's'}</em></p>
+			<PieceList pieces={pieces} large />
+		</>
 	)}
 </Base>

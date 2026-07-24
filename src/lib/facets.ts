@@ -1,4 +1,4 @@
-import type { Asset, AssetKind, Piece, PiecesData } from './types';
+import type { Asset, AssetKind, Location, Piece, PiecesData } from './types';
 
 export function getPieceById(data: PiecesData, id: string): Piece | undefined {
 	return data.pieces.find((p) => p.id === id);
@@ -60,6 +60,56 @@ export function getRandomPieces(pieces: Piece[], count: number, excludeIds: Read
 		[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
 	}
 	return shuffled.slice(0, count);
+}
+
+const EARTH_RADIUS_MILES = 3958.8;
+
+/** Great-circle distance between two lat/lng points, in miles. */
+export function distanceMiles(a: Location, b: Location): number {
+	const toRad = (d: number) => (d * Math.PI) / 180;
+	const dLat = toRad(b.lat - a.lat);
+	const dLng = toRad(b.lng - a.lng);
+	const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+	return 2 * EARTH_RADIUS_MILES * Math.asin(Math.sqrt(h));
+}
+
+export interface NearbyPiece {
+	piece: Piece;
+	miles: number;
+}
+
+/** Other pieces closest to `piece`'s location, nearest first — capped at `maxCount` pieces and
+ * `maxMiles` radius, whichever limit is hit first. The radius cap matters: without it, a piece
+ * painted somewhere isolated would have its "nearby" list padded out with pieces hundreds of
+ * miles away just to fill the count. */
+export function getNearbyPieces(pieces: Piece[], piece: Piece, maxCount: number, maxMiles: number): NearbyPiece[] {
+	return pieces
+		.filter((p) => p.id !== piece.id)
+		.map((p) => ({ piece: p, miles: distanceMiles(piece.location, p.location) }))
+		.filter((n) => n.miles <= maxMiles)
+		.sort((a, b) => a.miles - b.miles)
+		.slice(0, maxCount);
+}
+
+export interface TimelineNeighbors {
+	before: Piece[];
+	after: Piece[];
+}
+
+/** Chronological neighbors of `piece` — up to `before` pieces immediately preceding it and
+ * `after` immediately following, oldest first either side. Ties on the same date are broken by
+ * id so the ordering is stable and deterministic. */
+export function getTimelineNeighbors(pieces: Piece[], piece: Piece, before: number, after: number): TimelineNeighbors {
+	const sorted = [...pieces].sort((a, b) => {
+		if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+		return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+	});
+	const idx = sorted.findIndex((p) => p.id === piece.id);
+	if (idx === -1) return { before: [], after: [] };
+	return {
+		before: sorted.slice(Math.max(0, idx - before), idx),
+		after: sorted.slice(idx + 1, idx + 1 + after)
+	};
 }
 
 export function getPiecesByPlace(data: PiecesData): Map<string, Piece[]> {

@@ -1,12 +1,20 @@
 ---
 import { env } from 'cloudflare:workers';
 import Base from '../../layouts/Base.astro';
+import PieceThumb from '../../components/PieceThumb.astro';
 import { getPieces } from '../../lib/data';
-import { getPieceById, getPrimaryAsset, orderAssetsFinalFirst } from '../../lib/facets';
+import { getNearbyPieces, getPieceById, getPrimaryAsset, getTimelineNeighbors, orderAssetsFinalFirst } from '../../lib/facets';
 import { imageUrl, originalImageUrl, SIZE_WIDTHS } from '../../lib/images';
 import { setPageCacheHeaders } from '../../lib/cache';
 
 setPageCacheHeaders(Astro.response.headers);
+
+// Tuning for the "Nearby" map below: whichever limit is hit first, so a piece painted somewhere
+// isolated doesn't get padded out with pins hundreds of miles away just to fill a quota.
+const NEARBY_MAX_COUNT = 10;
+const NEARBY_MAX_MILES = 100;
+// "Around this time": how many chronological neighbors to show on each side.
+const TIMELINE_NEIGHBOR_COUNT = 3;
 
 const { id } = Astro.params;
 const { data } = await getPieces(env.ART_BUCKET);
@@ -17,6 +25,28 @@ if (!piece) {
 }
 
 const orderedAssets = piece ? orderAssetsFinalFirst(piece.assets) : [];
+
+const nearby = piece ? getNearbyPieces(data.pieces, piece, NEARBY_MAX_COUNT, NEARBY_MAX_MILES) : [];
+const timelineNeighbors = piece
+	? getTimelineNeighbors(data.pieces, piece, TIMELINE_NEIGHBOR_COUNT, TIMELINE_NEIGHBOR_COUNT)
+	: { before: [], after: [] };
+
+const nearbyMapData = piece
+	? JSON.stringify({
+			current: { title: piece.title, lat: piece.location.lat, lng: piece.location.lng },
+			nearby: nearby.map((n) => {
+				const asset = getPrimaryAsset(n.piece);
+				return {
+					id: n.piece.id,
+					title: n.piece.title,
+					lat: n.piece.location.lat,
+					lng: n.piece.location.lng,
+					thumb: asset ? imageUrl(asset, 'thumb') : '',
+					miles: n.miles
+				};
+			})
+		})
+	: '';
 
 // Only ever true right after /admin/new's own redirect. Does two things, both admin-only and
 // never shown to other viewers (nothing else ever links here with this param): shows an "add
@@ -83,11 +113,90 @@ const ogDescription = piece
 			))}
 
 			{piece.notes && <p>{piece.notes}</p>}
+
+			{(timelineNeighbors.before.length > 0 || timelineNeighbors.after.length > 0) && (
+				<section>
+					<h2>Around this time</h2>
+					<div class="timeline-neighbors">
+						{timelineNeighbors.before.map((p) => (
+							<a href={`/piece/${p.id}`} class="neighbor">
+								<PieceThumb piece={p} size={100} />
+								<span class="neighbor-caption">{p.title}<br />{p.date}</span>
+							</a>
+						))}
+						<span class="neighbor neighbor-current">
+							<PieceThumb piece={piece} size={100} />
+							<span class="neighbor-caption">{piece.title}<br />{piece.date}</span>
+						</span>
+						{timelineNeighbors.after.map((p) => (
+							<a href={`/piece/${p.id}`} class="neighbor">
+								<PieceThumb piece={p} size={100} />
+								<span class="neighbor-caption">{p.title}<br />{p.date}</span>
+							</a>
+						))}
+					</div>
+				</section>
+			)}
+
+			<section>
+				<h2>Nearby</h2>
+				<p>
+					<em>
+						{nearby.length > 0
+							? `Other pieces painted near ${piece.location.placeName}. Click a pin to visit it.`
+							: `No other pieces recorded within ${NEARBY_MAX_MILES} miles yet.`}
+					</em>
+				</p>
+				<div id="nearby-map" style="height:50vh; min-height:320px;"></div>
+			</section>
 		</article>
 	) : (
 		<p>Piece not found.</p>
 	)}
 </Base>
+
+{piece && (
+	<>
+		<script type="application/json" id="nearby-data" is:inline set:html={nearbyMapData} />
+		<style>
+			.timeline-neighbors {
+				display: flex;
+				justify-content: center;
+				align-items: flex-start;
+				gap: 0.5rem;
+				overflow-x: auto;
+				padding-bottom: 0.25rem;
+			}
+			.neighbor {
+				flex: none;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				width: 100px;
+				color: inherit;
+				text-decoration: none;
+			}
+			.neighbor-caption {
+				display: block;
+				margin-top: 0.35rem;
+				font-family: var(--mono);
+				font-size: 0.7rem;
+				text-transform: uppercase;
+				color: var(--text-muted);
+				text-align: center;
+			}
+			.neighbor-current {
+				border: 3px solid var(--pink);
+				border-radius: 4px;
+				padding: 2px;
+			}
+		</style>
+		<script>
+			import { setupNearbyMap } from '../../scripts/nearbyMap';
+			setupNearbyMap();
+		</script>
+	</>
+)}
 
 {justAdded && (
 	<style>
