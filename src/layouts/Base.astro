@@ -242,18 +242,20 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 			/* Gated to devices with a real, non-touch pointer: without this, tapping a chip on mobile
 			   to deselect it leaves the browser's simulated :hover "stuck" on (no mouseout ever
 			   fires from a tap) — since it looked identical to .selected, a just-deselected chip
-			   still looked selected until you tapped elsewhere. Desktop hover is unaffected. */
+			   still looked selected until you tapped elsewhere. Desktop hover is unaffected.
+			   Deliberately a lighter outline, not the solid fill .selected uses below, so hovering a
+			   chip never looks like it's already selected. */
 			@media (hover: hover) and (pointer: fine) {
 				.tag-chip:hover {
-					background: var(--purple);
-					color: white;
+					background: var(--panel);
+					color: var(--purple);
 					border-color: var(--purple);
 				}
 			}
 			.tag-chip.selected {
-				/* Same look as :hover, but persistent — the admin form's tag chips toggle this
-				   class on/off to show which tags are currently in the tags box, since once it has
-				   enough tags to overflow, you lose visual track of what's already in there. */
+				/* Solid fill, persistent — the admin form's tag chips toggle this class on/off to
+				   show which tags are currently in the tags box, since once it has enough tags to
+				   overflow, you lose visual track of what's already in there. */
 				background: var(--purple);
 				color: white;
 				border-color: var(--purple);
