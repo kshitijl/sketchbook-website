@@ -517,25 +517,32 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 			.timeline-month-group {
 				margin-top: 0.5rem;
 			}
-			#timeline-back {
-				font-family: var(--mono);
-				text-transform: uppercase;
-				font-size: 0.75rem;
-				padding: 0.3rem 0.6rem;
-			}
-			#timeline-year-label {
-				/* Clicking the year itself also goes back to the years view — same action as
-				   "← All years", just a second, more direct place to click while looking right at
-				   the year you're already in. Reset the button chrome so it reads as a label, not a
-				   boxy control. */
+			/* Breadcrumb: "All years › 2013 › May" — every ancestor level (.timeline-crumb) is a
+			   plain-looking, underlined button that jumps straight to that level, styled identically
+			   so the whole thing reads as one directory-like path rather than a button plus a
+			   separate label. The current (deepest) segment is just text — nowhere shallower to jump
+			   to from there. */
+			.timeline-breadcrumb {
+				margin: 0.5rem 0 0;
 				font-family: var(--mono);
 				font-size: 0.9rem;
+			}
+			.timeline-crumb {
 				background: none;
 				border: none;
 				padding: 0;
+				font: inherit;
+				text-transform: none;
 				cursor: pointer;
 				text-decoration: underline;
 				color: var(--text);
+			}
+			.timeline-crumb:hover {
+				background: none;
+				color: var(--pink);
+			}
+			#timeline-crumb-month {
+				color: var(--text-muted);
 			}
 			.timeline-legend {
 				display: flex;

@@ -17,20 +17,27 @@ interface TimelineData {
 	years: Record<string, TimelineBucket>;
 }
 
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+	'July', 'August', 'September', 'October', 'November', 'December'];
+
 /** Two-level activity bar chart (built server-side in index.astro): year bars by default, drill
  * into a year to see its (at most 12) month bars — bounded at both levels so bars stay comfortably
  * tappable no matter how many years of pieces pile up, unlike one flat row of every month ever.
  * Clicking a year browses every piece that year in the gallery frame below; clicking one of its
- * month bars narrows that down to just that month. prev/next page through whichever set is
- * current — month or year — stopping at both ends rather than wrapping around. The bars
- * themselves are the "what have I been doing" visual — this script only handles
- * selection/drill-down, not any drawing. */
+ * month bars narrows that down to just that month. A breadcrumb ("All years › 2013 › May") tracks
+ * the current depth — "All years" and the year are clickable jumps back up, same as a directory
+ * path. prev/next page through whichever set is current — month or year — stopping at both ends
+ * rather than wrapping around. The bars themselves are the "what have I been doing" visual — this
+ * script only handles selection/drill-down, not any drawing. */
 export function setupTimelineChart(): void {
 	const dataEl = document.getElementById('timeline-data');
 	const yearsSection = document.getElementById('timeline-years');
 	const monthsSection = document.getElementById('timeline-months');
-	const yearLabel = document.getElementById('timeline-year-label');
-	const backBtn = document.getElementById('timeline-back');
+	const crumbYearsBtn = document.getElementById('timeline-crumb-years');
+	const crumbYearWrap = document.getElementById('timeline-crumb-year-wrap');
+	const crumbYearBtn = document.getElementById('timeline-crumb-year');
+	const crumbMonthWrap = document.getElementById('timeline-crumb-month-wrap');
+	const crumbMonthText = document.getElementById('timeline-crumb-month');
 	const img = document.getElementById('timeline-image') as HTMLImageElement | null;
 	const link = document.getElementById('timeline-piece-link') as HTMLAnchorElement | null;
 	const captionLink = document.getElementById('timeline-caption') as HTMLAnchorElement | null;
@@ -43,8 +50,11 @@ export function setupTimelineChart(): void {
 		!dataEl ||
 		!yearsSection ||
 		!monthsSection ||
-		!yearLabel ||
-		!backBtn ||
+		!crumbYearsBtn ||
+		!crumbYearWrap ||
+		!crumbYearBtn ||
+		!crumbMonthWrap ||
+		!crumbMonthText ||
 		!img ||
 		!link ||
 		!captionLink ||
@@ -69,22 +79,31 @@ export function setupTimelineChart(): void {
 	let pieceIndex = 0;
 
 	// Browse every piece in a year — deselects whichever month was picked, if any. This is also
-	// what clicking the year label (while already drilled into one of its months) does: "go back
+	// what clicking the year crumb (while already drilled into one of its months) does: "go back
 	// up" from a specific month to the whole year, without leaving the drilled-in month-bars view.
 	function browseYear(year: string) {
 		currentYear = year;
 		selectedMonth = '';
 		for (const bar of monthBars) bar.classList.remove('selected');
 		for (const bar of yearBars) bar.classList.toggle('selected', bar.dataset.year === year);
+		crumbYearWrap!.classList.remove('timeline-hidden');
+		crumbYearBtn!.textContent = year;
+		crumbMonthWrap!.classList.add('timeline-hidden');
 		setBucket(byYear[year]);
 	}
 
 	function showYear(year: string) {
 		for (const group of monthGroups) group.classList.toggle('timeline-hidden', group.dataset.year !== year);
-		yearLabel!.textContent = year;
 		yearsSection!.classList.add('timeline-hidden');
 		monthsSection!.classList.remove('timeline-hidden');
 		browseYear(year);
+	}
+
+	function showYears() {
+		monthsSection!.classList.add('timeline-hidden');
+		yearsSection!.classList.remove('timeline-hidden');
+		crumbYearWrap!.classList.add('timeline-hidden');
+		crumbMonthWrap!.classList.add('timeline-hidden');
 	}
 
 	function setBucket(next: TimelineBucket | undefined) {
@@ -119,23 +138,17 @@ export function setupTimelineChart(): void {
 		for (const bar of monthBars) bar.classList.toggle('selected', bar.dataset.month === selectedMonth);
 	}
 
-	function showYears() {
-		monthsSection!.classList.add('timeline-hidden');
-		yearsSection!.classList.remove('timeline-hidden');
-	}
-
 	for (const bar of yearBars) {
 		if (bar.disabled) continue;
 		bar.addEventListener('click', () => showYear(bar.dataset.year!));
 	}
-	backBtn.addEventListener('click', showYears);
-	// Clicking the year label (while drilled into a month) goes "up" one level — from that specific
-	// month back to browsing the whole year — without leaving the drilled-in month-bars view. It's
-	// not the same action as "← All years", which leaves this view entirely.
-	yearLabel.addEventListener('click', () => browseYear(currentYear));
+	crumbYearsBtn.addEventListener('click', showYears);
+	crumbYearBtn.addEventListener('click', () => browseYear(currentYear));
 	for (const bar of monthBars) {
 		bar.addEventListener('click', () => {
 			selectedMonth = bar.dataset.month!;
+			crumbMonthWrap!.classList.remove('timeline-hidden');
+			crumbMonthText!.textContent = MONTH_NAMES[Number(selectedMonth.slice(5, 7)) - 1];
 			setBucket(byMonth[selectedMonth]);
 		});
 	}
@@ -151,8 +164,9 @@ export function setupTimelineChart(): void {
 	});
 
 	render();
-	// Land on the years view (per the design), but mark the year containing the initially-selected
-	// (most recent) month as selected, so it's clear at a glance which year that piece is from —
-	// without actually drilling in and hiding the year row.
+	// Land on the years view with an empty breadcrumb (per the design — it only grows as you
+	// actually navigate deeper), but mark the year containing the initially-selected (most recent)
+	// month as selected on the year bars themselves, so it's clear at a glance which year that
+	// piece is from without the breadcrumb claiming you're already drilled in.
 	for (const bar of yearBars) bar.classList.toggle('selected', bar.dataset.year === currentYear);
 }

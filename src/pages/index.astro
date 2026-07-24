@@ -242,6 +242,16 @@ const timelineJson = JSON.stringify({
 				<span><i class="swatch seg-sketchbook"></i>sketchbook page</span>
 			</div>
 
+			<p class="timeline-breadcrumb">
+				<button type="button" id="timeline-crumb-years" class="timeline-crumb">All years</button>
+				<span id="timeline-crumb-year-wrap" class="timeline-hidden">
+					{' › '}<button type="button" id="timeline-crumb-year" class="timeline-crumb"></button>
+				</span>
+				<span id="timeline-crumb-month-wrap" class="timeline-hidden">
+					{' › '}<span id="timeline-crumb-month"></span>
+				</span>
+			</p>
+
 			<div id="timeline-years">
 				<div class="timeline-chart" style={`--chart-h:${CHART_H}px;`}>
 					{yearBars.map((yb) => (
@@ -266,10 +276,6 @@ const timelineJson = JSON.stringify({
 			</div>
 
 			<div id="timeline-months" class="timeline-hidden">
-				<p>
-					<button type="button" id="timeline-back">&larr; All years</button>
-					{' '}<button type="button" id="timeline-year-label"></button>
-				</p>
 				{years.map((year) => (
 					<div class="timeline-month-group timeline-hidden" data-year={year}>
 						<div class="timeline-chart" style={`--chart-h:${CHART_H}px;`}>
