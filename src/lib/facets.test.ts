@@ -23,7 +23,6 @@ function makePiece(overrides: Partial<Piece> = {}): Piece {
 		id: 'piece-1',
 		title: 'Untitled',
 		date: '2024-01-01',
-		stage: 'finished',
 		location: { lat: 0, lng: 0, placeName: 'Nowhere' },
 		tags: [],
 		notes: '',
@@ -201,20 +200,16 @@ describe('getTagFrequency', () => {
 });
 
 describe('isPainting', () => {
-	it('counts a finished piece with a wet medium tag', () => {
-		expect(isPainting(makePiece({ stage: 'finished', tags: ['watercolor'] }))).toBe(true);
+	it('counts a piece tagged "painting"', () => {
+		expect(isPainting(makePiece({ tags: ['painting'] }))).toBe(true);
 	});
 
-	it('does not count a study, even with a wet medium', () => {
-		expect(isPainting(makePiece({ stage: 'study', tags: ['watercolor'] }))).toBe(false);
+	it('does not count a piece without the tag, regardless of medium', () => {
+		expect(isPainting(makePiece({ tags: ['watercolor'] }))).toBe(false);
 	});
 
-	it('does not count a finished dry-medium piece', () => {
-		expect(isPainting(makePiece({ stage: 'finished', tags: ['pencil'] }))).toBe(false);
-	});
-
-	it('counts a finished mixed ink+watercolor piece (checks tag directly, not classifyMedium)', () => {
-		expect(isPainting(makePiece({ stage: 'finished', tags: ['ink', 'watercolor'] }))).toBe(true);
+	it('counts a piece with "painting" alongside other tags', () => {
+		expect(isPainting(makePiece({ tags: ['ink', 'painting', 'watercolor'] }))).toBe(true);
 	});
 });
 
@@ -279,9 +274,9 @@ describe('getPaintingStats', () => {
 	it('splits lifetime vs. this-year counts and computes the next-hundred milestone', () => {
 		const now = new Date('2026-06-01T00:00:00Z');
 		const data = makeData([
-			makePiece({ id: 'old', date: '2020-01-01', stage: 'finished', tags: ['oil'] }),
-			makePiece({ id: 'this-year', date: '2026-02-01', stage: 'finished', tags: ['gouache'] }),
-			makePiece({ id: 'not-a-painting', date: '2026-03-01', stage: 'study', tags: ['pencil'] })
+			makePiece({ id: 'old', date: '2020-01-01', tags: ['oil', 'painting'] }),
+			makePiece({ id: 'this-year', date: '2026-02-01', tags: ['gouache', 'painting'] }),
+			makePiece({ id: 'not-a-painting', date: '2026-03-01', tags: ['pencil'] })
 		]);
 		const stats = getPaintingStats(data, now);
 		expect(stats.lifetimeCount).toBe(2);
@@ -294,7 +289,7 @@ describe('getPaintingStats', () => {
 	it('rolls the milestone to the next hundred once the current one is reached', () => {
 		const now = new Date('2026-01-01T00:00:00Z');
 		const pieces = Array.from({ length: 100 }, (_, i) =>
-			makePiece({ id: `p${i}`, date: '2026-01-01', stage: 'finished', tags: ['oil'] })
+			makePiece({ id: `p${i}`, date: '2026-01-01', tags: ['oil', 'painting'] })
 		);
 		const stats = getPaintingStats(makeData(pieces), now);
 		expect(stats.yearCount).toBe(100);

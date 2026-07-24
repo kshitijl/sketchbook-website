@@ -1,5 +1,3 @@
-export type Stage = 'finished' | 'study';
-
 export type AssetKind =
 	| 'final'
 	| 'unsorted'
@@ -34,7 +32,6 @@ export interface Piece {
 	id: string;
 	title: string;
 	date: string; // ISO date, e.g. "2023-11-14"
-	stage: Stage;
 	location: Location;
 	tags: string[];
 	notes: string;

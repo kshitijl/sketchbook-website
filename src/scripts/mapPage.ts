@@ -36,7 +36,7 @@ function renderDetail(piece: Piece): string {
 	return `
 		<article>
 			<h2><a href="/piece/${encodeURIComponent(piece.id)}">${escapeHtml(piece.title)}</a></h2>
-			<p>${escapeHtml(piece.date)} &middot; ${escapeHtml(piece.stage)} &middot; ${escapeHtml(piece.location.placeName)}</p>
+			<p>${escapeHtml(piece.date)} &middot; ${escapeHtml(piece.location.placeName)}</p>
 			<p>${tagsHtml}</p>
 			${imagesHtml}
 			${piece.notes ? `<p>${escapeHtml(piece.notes)}</p>` : ''}

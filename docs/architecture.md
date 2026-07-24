@@ -31,10 +31,11 @@ within N minutes."
 - **Auth**: Cloudflare Access, Google as the identity provider, policy locked to the owner's email.
 - **Data model**: assets (photos/scans) attach to a piece and are tagged by kind, including
   setup/environment photos (not a separate top-level entity). Every piece requires at least an
-  approximate location. Trips and medium are both just tags (open, multi-valued, no special fields).
-  `stage` (finished vs. study/sketch) is the one dedicated single-select field, since it's a
-  one-per-piece classification rather than an open multi-valued one. No draft/private state —
-  uploading makes something immediately live.
+  approximate location. Trips, medium, and classifications like "painting" vs. sketchbook page are
+  all just tags (open, multi-valued, no special fields) — there used to be a dedicated `stage`
+  field for finished-vs-study, but it turned out never to be used in practice, so it was removed
+  rather than kept as unused structure. No draft/private state — uploading makes something
+  immediately live.
 - **Cache invalidation**: no manual "which pages does this affect" computation, and no reliance on
   TTL expiry either — every admin write purges the Worker's own cache in full. See **Cache policy**
   below for why that's better than either alternative.
@@ -97,7 +98,6 @@ cheap to read, cheap to write, cheap to ship to the browser whole for the map/ti
   "id": "2023-india-jaipur-001",
   "title": "Hawa Mahal, morning light",
   "date": "2023-11-14",
-  "stage": "finished",
   "location": { "lat": 26.9239, "lng": 75.8267, "placeName": "Jaipur, India" },
   "tags": ["india-2023", "watercolor", "ink", "architecture"],
   "notes": "Free text — the artist's own commentary on the piece.",
@@ -111,7 +111,6 @@ cheap to read, cheap to write, cheap to ship to the browser whole for the map/ti
 }
 ```
 
-- `stage`: `"finished" | "study"` — one-per-piece classification, not a tag.
 - `favoriteRank`: `number | null` — `null` means not a favorite; a number is its position in the
   favorites list.
 - `tags`: open vocabulary, multi-valued. Medium (watercolor, ink, oil, gouache, pencil, acrylic) and
@@ -127,10 +126,6 @@ cheap to read, cheap to write, cheap to ship to the browser whole for the map/ti
   optional, no master fallback**: every asset always has all three (enforced by the type, the upload
   path, and the backfill), so a missing variant is a bug to fix, not a state to tolerate. `imageUrl(asset,
   size)` resolves it. See the **Images** section for how variants are generated (at upload, in the browser).
-
-Why `stage` gets its own field when medium/trips don't: `stage` is single-select (a piece just *is*
-finished or a study, never both), which an open `tags` array can't enforce — a real structural
-difference, not an arbitrary one.
 
 **Write flow** (every admin action — upload, edit, retag, reorder favorites):
 1. Cloudflare Access has already verified the editor at the edge before this handler runs at all.

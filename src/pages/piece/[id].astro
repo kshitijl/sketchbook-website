@@ -61,9 +61,7 @@ const justAdded = Astro.url.searchParams.get('added') === '1';
 // correct whether this is served from workers.dev or the eventual custom domain.
 const primaryAsset = piece ? getPrimaryAsset(piece) : undefined;
 const ogImage = primaryAsset ? new URL(imageUrl(primaryAsset, 'card'), Astro.url).toString() : undefined;
-const ogDescription = piece
-	? piece.notes || `${piece.date} · ${piece.stage} · ${piece.location.placeName}`
-	: undefined;
+const ogDescription = piece ? piece.notes || `${piece.date} · ${piece.location.placeName}` : undefined;
 ---
 
 <Base title={piece ? piece.title : 'Not found'} description={ogDescription} image={ogImage}>
@@ -72,7 +70,7 @@ const ogDescription = piece
 			{justAdded && <p><a href="/admin/new"><strong>&larr; Add another piece</strong></a></p>}
 			<h1>{piece.title}</h1>
 			<p>
-				{piece.date} · {piece.stage} · {piece.location.placeName}
+				{piece.date} · {piece.location.placeName}
 				{' · '}<a href={`/admin/edit/${piece.id}`}>Edit</a>
 			</p>
 			<p>

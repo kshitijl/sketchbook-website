@@ -11,6 +11,9 @@ setPageCacheHeaders(Astro.response.headers);
 const { slug } = Astro.params;
 const { data } = await getPieces(env.ART_BUCKET);
 const pieces = slug ? getPiecesByTag(data, slug) : [];
+// ?sort=asc reverses the default newest-first order to oldest-first — for e.g. "first marks",
+// linked from the intro blurb, where the point is watching things unfold chronologically.
+if (Astro.url.searchParams.get('sort') === 'asc') pieces.reverse();
 ---
 
 <Base title={`#${slug}`}>

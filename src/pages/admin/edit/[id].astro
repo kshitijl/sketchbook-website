@@ -10,7 +10,7 @@ import { getVariantFiles, imageUrl } from '../../../lib/images';
 import { purgePages } from '../../../lib/purge';
 import { isAuthorizedAdminRequest } from '../../../lib/adminGuard';
 import { backupAsset, backupPieceData, logBackupEvent } from '../../../lib/backup';
-import type { AssetKind, Stage } from '../../../lib/types';
+import type { AssetKind } from '../../../lib/types';
 
 // Every kind except `final` — that one has its own dedicated single-slot section below, not a
 // per-asset kind selector, since a piece always has at most one and it's not just another tag.
@@ -33,7 +33,6 @@ let values = piece
 	? {
 			title: piece.title,
 			date: piece.date,
-			stage: piece.stage,
 			lat: String(piece.location.lat),
 			lng: String(piece.location.lng),
 			placeName: piece.location.placeName,
@@ -43,7 +42,6 @@ let values = piece
 	: {
 			title: '',
 			date: '',
-			stage: 'finished' as Stage,
 			lat: '',
 			lng: '',
 			placeName: '',
@@ -90,7 +88,6 @@ if (piece && Astro.request.method === 'POST') {
 	values = {
 		title: String(formData.get('title') ?? '').trim(),
 		date: String(formData.get('date') ?? '').trim(),
-		stage: formData.get('stage') === 'study' ? 'study' : 'finished',
 		lat: String(formData.get('lat') ?? '').trim(),
 		lng: String(formData.get('lng') ?? '').trim(),
 		placeName: String(formData.get('placeName') ?? '').trim(),
@@ -232,7 +229,6 @@ if (piece && Astro.request.method === 'POST') {
 			if (!p) return;
 			p.title = values.title;
 			p.date = values.date;
-			p.stage = values.stage;
 			p.location = { lat, lng, placeName: values.placeName };
 			p.tags = tags;
 			p.notes = values.notes;
@@ -308,15 +304,6 @@ if (piece && Astro.request.method === 'POST') {
 				<p>
 					<label>Date<br /><input type="date" id="dateInput" name="date" value={values.date} required /></label>
 				</p>
-				<p>
-					<label>Stage<br />
-						<select name="stage">
-							<option value="finished" selected={values.stage === 'finished'}>Finished</option>
-							<option value="study" selected={values.stage === 'study'}>Study / sketch</option>
-						</select>
-					</label>
-				</p>
-
 				<p>
 					<strong>Location</strong><br />
 					<input type="hidden" id="latInput" name="lat" value={values.lat} />

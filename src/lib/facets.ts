@@ -144,15 +144,9 @@ export function getTagFrequency(data: PiecesData): TagFrequency[] {
 		.sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
 }
 
-const WET_MEDIA = new Set(['watercolor', 'gouache', 'oil', 'acrylic']);
-
-/**
- * Working definition of "painting" (as opposed to a drawing or a quick study): a *finished* piece
- * tagged with at least one wet medium. This is a first guess, not a confirmed definition from the
- * artist — revisit if it doesn't match how they actually count. See docs/TODO.md.
- */
+/** A "painting" is just whatever's tagged `painting` — the artist's own call, not a derived guess. */
 export function isPainting(piece: Piece): boolean {
-	return piece.stage === 'finished' && piece.tags.some((t) => WET_MEDIA.has(t));
+	return piece.tags.includes('painting');
 }
 
 export interface PaintingStats {

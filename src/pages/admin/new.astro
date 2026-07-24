@@ -10,7 +10,7 @@ import { purgePages } from '../../lib/purge';
 import { isAuthorizedAdminRequest } from '../../lib/adminGuard';
 import { backupAsset, backupPieceData, logBackupEvent } from '../../lib/backup';
 import { ASSET_KINDS } from '../../lib/assetKinds';
-import type { Asset, AssetKind, Piece, Stage } from '../../lib/types';
+import type { Asset, AssetKind, Piece } from '../../lib/types';
 
 Astro.response.headers.set('Cache-Control', 'no-store');
 
@@ -23,7 +23,6 @@ const errors: string[] = [];
 let values = {
 	title: '',
 	date: todayISO,
-	stage: 'finished' as Stage,
 	lat: '',
 	lng: '',
 	placeName: '',
@@ -41,7 +40,6 @@ if (Astro.request.method === 'POST') {
 	values = {
 		title: String(formData.get('title') ?? '').trim(),
 		date: String(formData.get('date') ?? '').trim(),
-		stage: formData.get('stage') === 'study' ? 'study' : 'finished',
 		lat: String(formData.get('lat') ?? '').trim(),
 		lng: String(formData.get('lng') ?? '').trim(),
 		placeName: String(formData.get('placeName') ?? '').trim(),
@@ -161,7 +159,6 @@ if (Astro.request.method === 'POST') {
 			id: newId,
 			title: values.title,
 			date: values.date,
-			stage: values.stage,
 			location: { lat, lng, placeName: values.placeName },
 			tags,
 			notes: values.notes,
@@ -232,15 +229,6 @@ if (Astro.request.method === 'POST') {
 		<p>
 			<label>Date<br /><input type="date" id="dateInput" name="date" value={values.date} required /></label>
 		</p>
-		<p>
-			<label>Stage<br />
-				<select name="stage">
-					<option value="finished" selected={values.stage === 'finished'}>Finished</option>
-					<option value="study" selected={values.stage === 'study'}>Study / sketch</option>
-				</select>
-			</label>
-		</p>
-
 		<p>
 			<strong>Location</strong><br />
 			<input type="hidden" id="latInput" name="lat" value={values.lat} />
