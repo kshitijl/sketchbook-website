@@ -82,4 +82,9 @@ export function setupTimelineChart(): void {
 	});
 
 	render();
+
+	// The chart opens on the most recent month, which is the rightmost bar — without this it'd be
+	// scrolled off-screen to the right on load behind `.timeline-scroll`'s default scrollLeft of 0.
+	const scroller = chart.closest<HTMLElement>('.timeline-scroll');
+	if (scroller) scroller.scrollLeft = scroller.scrollWidth;
 }

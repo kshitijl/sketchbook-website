@@ -430,13 +430,20 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 
 			/* Timeline activity bar chart: one bar per month (built server-side in index.astro),
 			   each a vertical flex stack of medium-colored segments that pile up from the baseline.
-			   The whole chart is a row of equal-width bars sitting on a 2px baseline. Segment colors
-			   are a validated categorical pair (blue = wet media, sepia = dry media) plus a neutral
-			   for "other" — see the dataviz palette check in the timeline work. */
+			   Segment colors are a validated categorical pair (blue = wet media, sepia = dry media)
+			   plus a neutral for "other" — see the dataviz palette check in the timeline work.
+			   Bars are a fixed width (--bar-w), not "container width / month count" — with years of
+			   history that division only gets thinner as more months are added. `.timeline-scroll`
+			   scrolls chart + axis together so they can't drift out of alignment with each other. */
+			.timeline-scroll {
+				overflow-x: auto;
+				overflow-y: hidden;
+			}
 			.timeline-chart {
 				display: flex;
 				align-items: flex-end;
 				gap: 2px;
+				width: max-content;
 				height: var(--chart-h);
 				margin: 0.5rem 0 0;
 				border-bottom: 2px solid var(--border);
@@ -444,8 +451,8 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 			.timeline-bar {
 				/* Override the global dark filled-button style — a bar is a transparent track that
 				   holds the colored fills, not a button-looking box. */
-				flex: 1;
-				min-width: 0;
+				flex: 0 0 var(--bar-w);
+				width: var(--bar-w);
 				height: 100%;
 				display: flex;
 				flex-direction: column;
@@ -490,14 +497,15 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 			.timeline-axis {
 				display: flex;
 				gap: 2px;
+				width: max-content;
 				margin-top: 0.25rem;
 				font-family: var(--mono);
 				font-size: 0.65rem;
 				color: var(--text-muted);
 			}
 			.timeline-axis .tick {
-				flex: 1;
-				min-width: 0;
+				flex: 0 0 var(--bar-w);
+				width: var(--bar-w);
 				white-space: nowrap;
 			}
 			.timeline-legend {

@@ -92,6 +92,12 @@ const maxMonthCount = Math.max(1, ...[...monthBuckets.values()].map((b) => b.pie
 // Fixed pixel height for the tallest bar; every segment scales to it. Kept in the frontmatter (not
 // CSS) because the segment heights are computed here per month and handed to the markup directly.
 const CHART_H = 160;
+// Fixed pixel width per month, not "however many months / container width" — with 14+ years of
+// pieces (168+ months) that division makes bars unreadably thin, and only gets thinner as more
+// years are added. A fixed width plus a horizontally-scrolling container (same pattern as the
+// piece page's "Around this time" row) keeps every bar legible regardless of how much history
+// there is.
+const BAR_WIDTH_PX = 10;
 const bars = monthKeys.map((month) => {
 	const bucket = monthBuckets.get(month);
 	const total = bucket?.pieces.length ?? 0;
@@ -187,25 +193,27 @@ const timelineJson = JSON.stringify(
 				<span><i class="swatch seg-watercolor"></i>watercolor</span>
 				<span><i class="swatch seg-sketchbook"></i>sketchbook page</span>
 			</div>
-			<div class="timeline-chart" id="timeline-chart" style={`--chart-h:${CHART_H}px;`}>
-				{bars.map((bar) => (
-					<button
-						class="timeline-bar"
-						data-month={bar.month}
-						disabled={bar.total === 0}
-						title={`${bar.label} · ${bar.total} ${bar.total === 1 ? 'piece' : 'pieces'}`}
-						aria-label={`${bar.label}, ${bar.total} ${bar.total === 1 ? 'piece' : 'pieces'}`}
-					>
-						{bar.segs.map((s) => (
-							<span class={`seg ${s.cls}`} style={`height:${s.px.toFixed(1)}px`}></span>
-						))}
-					</button>
-				))}
-			</div>
-			<div class="timeline-axis">
-				{bars.map((bar, i) => (
-					<span class="tick">{bar.isYearStart || i === 0 ? bar.year : ''}</span>
-				))}
+			<div class="timeline-scroll" style={`--bar-w:${BAR_WIDTH_PX}px;`}>
+				<div class="timeline-chart" id="timeline-chart" style={`--chart-h:${CHART_H}px;`}>
+					{bars.map((bar) => (
+						<button
+							class="timeline-bar"
+							data-month={bar.month}
+							disabled={bar.total === 0}
+							title={`${bar.label} · ${bar.total} ${bar.total === 1 ? 'piece' : 'pieces'}`}
+							aria-label={`${bar.label}, ${bar.total} ${bar.total === 1 ? 'piece' : 'pieces'}`}
+						>
+							{bar.segs.map((s) => (
+								<span class={`seg ${s.cls}`} style={`height:${s.px.toFixed(1)}px`}></span>
+							))}
+						</button>
+					))}
+				</div>
+				<div class="timeline-axis">
+					{bars.map((bar, i) => (
+						<span class="tick">{bar.isYearStart || i === 0 ? bar.year : ''}</span>
+					))}
+				</div>
 			</div>
 			<p class="timeline-month" id="timeline-month"></p>
 			<a id="timeline-piece-link" href="#" class="carousel-image">

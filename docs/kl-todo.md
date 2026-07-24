@@ -6,6 +6,8 @@ x tag pages should say at the top the number of pieces that match that tag
 
 timeline rectangles too thin
 
+add 1 piece at least from england, mexico and panama
+
 x how exactly does the counter at the bottom work, N paintings so far? it should just be whether the tag #painting is present.
 
 tags in the new/edit pages should be in some categories: for example which medium, whether it's a painting or sketchbook page, whether it's any of the tagged trips. we need tag categories basically. and we should surface this in the tag cloud for viewers as well. it makes their exploration more structured. claude should ask me the categories. we can probably just hardcode categories for now? unless it's easy to have a tag categorization ui?
