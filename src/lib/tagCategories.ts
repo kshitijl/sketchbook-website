@@ -14,7 +14,7 @@ export interface TagCategory {
 export const TAG_CATEGORIES: TagCategory[] = [
 	{ name: 'Medium', tags: ['gouache', 'ink', 'pencil', 'watercolor'] },
 	{ name: 'Type', tags: ['painting', 'sketchbook page'] },
-	{ name: 'Trips', tags: ['2023 india trip', '2026 sierra trip', 'first india trip', 'first marks'] },
+	{ name: 'Trip/era', tags: ['2023 india trip', '2026 sierra trip', 'first india trip', 'first marks'] },
 	{ name: 'Place', tags: ['american southwest', 'brooklyn', 'california', 'manhattan', 'nyc', 'utah'] },
 	{ name: 'Institution', tags: ['museum', 'national park', 'zoo'] },
 	{ name: 'Season', tags: ['fall', 'summer', 'winter'] },
