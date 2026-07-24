@@ -85,7 +85,11 @@ const monthBuckets = new Map<string, { pieces: Piece[]; gouache: number; waterco
 // Pieces grouped by year too (not just derived from monthBuckets) — clicking into a year browses
 // every piece that year in the gallery frame below, not just whichever month you then click.
 const yearPieces = new Map<number, Piece[]>();
-for (const piece of allByDate) {
+// Oldest-first within a bucket (unlike `allByDate`, used as-is elsewhere on this page for
+// newest-first carousels) — so paging "next" through a month or year moves chronologically
+// forward, the order you'd actually want to review a stretch of work in.
+const allByDateAscending = [...allByDate].reverse();
+for (const piece of allByDateAscending) {
 	const month = piece.date.slice(0, 7); // "YYYY-MM"
 	const year = Number(piece.date.slice(0, 4));
 	const bucket = monthBuckets.get(month) ?? { pieces: [], gouache: 0, watercolor: 0, sketchbook: 0, other: 0 };

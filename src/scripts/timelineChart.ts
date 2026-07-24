@@ -76,7 +76,9 @@ export function setupTimelineChart(): void {
 	let bucket: TimelineBucket = byMonth[monthBars[monthBars.length - 1].dataset.month!]; // open on the most recent non-empty month
 	let selectedMonth = monthBars[monthBars.length - 1].dataset.month!;
 	let currentYear = selectedMonth.slice(0, 4);
-	let pieceIndex = 0;
+	// Buckets are oldest-first (see index.astro), so the most recent piece — the one the page
+	// should actually land on — is the *last* index, not the first.
+	let pieceIndex = bucket.pieces.length - 1;
 
 	// Browse every piece in a year — deselects whichever month was picked, if any. This is also
 	// what clicking the year crumb (while already drilled into one of its months) does: "go back
