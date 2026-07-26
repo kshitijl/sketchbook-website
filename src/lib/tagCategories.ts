@@ -7,34 +7,80 @@
  * grouped nicely.
  */
 export interface TagCategory {
-	name: string;
-	tags: string[];
+  name: string;
+  tags: string[];
 }
 
 export const TAG_CATEGORIES: TagCategory[] = [
-	{ name: 'Medium', tags: ['gouache', 'ink', 'pencil', 'watercolor'] },
-	{ name: 'Type', tags: ['painting', 'sketchbook page'] },
-	{ name: 'Trip/era', tags: ['2023 india trip', '2026 sierra trip', 'first india trip', 'first marks'] },
-	{ name: 'Place', tags: ['american southwest', 'brooklyn', 'california', 'manhattan', 'nyc', 'utah'] },
-	{ name: 'Institution', tags: ['museum', 'national park', 'zoo'] },
-	{ name: 'Season', tags: ['fall', 'summer', 'winter'] },
-	{ name: 'Light', tags: ['evening', 'morning', 'overcast'] },
-	{ name: 'Process', tags: ['not my photo', 'painted from life', 'painted from photo'] },
-	{
-		name: 'Subject',
-		tags: [
-			'architecture', 'beach', 'bird', 'boat', 'brownstones', 'church', 'city scene',
-			'dappled light', 'indoor scene', 'landscape', 'meadow', 'mountains', 'park', 'portrait',
-			'rocks', 'sidewalk', 'skeleton', 'statue', 'water'
-		]
-	}
+  { name: "Medium", tags: ["gouache", "ink", "pencil", "watercolor"] },
+  { name: "Type", tags: ["painting", "sketchbook page"] },
+  {
+    name: "Trip/era",
+    tags: [
+      "2023 india trip",
+      "2026 sierra trip",
+      "first india trip",
+      "first marks",
+    ],
+  },
+  {
+    name: "Place",
+    tags: [
+      "american southwest",
+      "brooklyn",
+      "california",
+      "england",
+      "florida",
+      "manhattan",
+      "mexico",
+      "nyc",
+      "panama",
+      "utah",
+    ],
+  },
+  {
+    name: "Institution",
+    tags: ["museum", "national park", "world heritage site", "zoo"],
+  },
+  { name: "Season", tags: ["fall", "summer", "winter"] },
+  { name: "Light", tags: ["evening", "morning", "overcast"] },
+  {
+    name: "Process",
+    tags: ["not my photo", "painted from life", "painted from photo"],
+  },
+  {
+    name: "Subject",
+    tags: [
+      "animals",
+      "architecture",
+      "beach",
+      "bird",
+      "boat",
+      "brownstones",
+      "church",
+      "city scene",
+      "dappled light",
+      "indoor scene",
+      "landscape",
+      "meadow",
+      "mountains",
+      "park",
+      "people",
+      "portrait",
+      "rocks",
+      "sidewalk",
+      "skeleton",
+      "statue",
+      "water",
+    ],
+  },
 ];
 
 const TAG_TO_CATEGORY = new Map<string, string>();
 for (const category of TAG_CATEGORIES) {
-	for (const tag of category.tags) TAG_TO_CATEGORY.set(tag, category.name);
+  for (const tag of category.tags) TAG_TO_CATEGORY.set(tag, category.name);
 }
 
 export function categoryForTag(tag: string): string | undefined {
-	return TAG_TO_CATEGORY.get(tag);
+  return TAG_TO_CATEGORY.get(tag);
 }
