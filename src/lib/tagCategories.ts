@@ -12,7 +12,10 @@ export interface TagCategory {
 }
 
 export const TAG_CATEGORIES: TagCategory[] = [
-  { name: "Medium", tags: ["gouache", "ink", "pencil", "watercolor"] },
+  {
+    name: "Medium",
+    tags: ["acrylic", "gouache", "ink", "oil", "pencil", "watercolor"],
+  },
   { name: "Type", tags: ["painting", "sketchbook page"] },
   {
     name: "Trip/era",
@@ -33,6 +36,7 @@ export const TAG_CATEGORIES: TagCategory[] = [
       "florida",
       "manhattan",
       "mexico",
+      "minnesota",
       "nyc",
       "panama",
       "utah",
@@ -46,7 +50,13 @@ export const TAG_CATEGORIES: TagCategory[] = [
   { name: "Light", tags: ["evening", "morning", "overcast"] },
   {
     name: "Process",
-    tags: ["not my photo", "painted from life", "painted from photo"],
+    tags: [
+      "abstract",
+      "from imagination",
+      "not my photo",
+      "painted from life",
+      "painted from photo",
+    ],
   },
   {
     name: "Subject",
