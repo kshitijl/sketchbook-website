@@ -32,12 +32,15 @@
 			"bucket_name": "31-art-website-backups"
 		}
 	],
-	// Explicit on purpose: the Astro Cloudflare adapter regenerates its own deploy-time config
-	// (dist/server/wrangler.json) from this file and does NOT carry through a "routes" field —
-	// tested and confirmed. The custom domain is attached via `wrangler deploy --domain
-	// klauria.art` instead (see docs/TODO.md for the current blocker on that). Keeping
-	// workers_dev explicit here means it can never be silently disabled by an unrelated flag
-	// the way it was on a `--domain` deploy attempt that then failed (a real incident during
-	// setup — the site went down until this was made explicit and redeployed).
-	"workers_dev": true
+	// SECURITY, not preference. Cloudflare Access is configured on the hostname pattern
+	// `klauria.art/admin*`, so it does not cover `31-art-website.workers.dev` — with workers_dev
+	// on, every `/admin/*` route was reachable there with no authentication at all. Found live on
+	// 2026-07-30 (see docs/TODO.md). The custom domain is attached separately and is unaffected by
+	// this flag, so turning it off removes the unprotected hostname without touching klauria.art.
+	// Historical note, still true: the Astro Cloudflare adapter regenerates its own deploy-time
+	// config (dist/server/wrangler.json) from this file and does not carry through a "routes"
+	// field, and an earlier `--domain` deploy attempt once silently flipped this off and took the
+	// site down back when workers.dev *was* the site. Keeping it explicit is what makes either
+	// value deliberate.
+	"workers_dev": false
 }

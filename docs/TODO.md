@@ -1148,3 +1148,40 @@ three rounds because the drag was hand-rolled pointer-event code.
       - Gotcha: the `__BUILD_COMMIT__`/`__BUILD_TIME__` declarations must go *inside*
         `declare global` in `src/env.d.ts`. That file is a module, so a top-level `declare const`
         is only visible within the file itself — it typechecked as missing everywhere else.
+
+## Security audit before making the repo public (2026-07-30)
+- [x] **CRITICAL, found and fixed: `/admin/*` was completely unauthenticated on the workers.dev
+      hostname.** Cloudflare Access is scoped to the *hostname pattern* `klauria.art/admin*`, so it
+      never applied to `31-art-website.klauria.workers.dev`. With `workers_dev: true`, all five
+      admin routes returned 200 there to anyone. Two separate exposures, worth separating:
+      - **Reads pre-dated this session.** `isAuthorizedAdminRequest()` was called *inside*
+        `if (Astro.request.method === 'POST')`, so GET on `/admin/*` was never guarded on any
+        hostname — the admin UI and the backup log were publicly readable on workers.dev for as
+        long as that hostname existed.
+      - **Writes were opened during this session.** With `ADMIN_EMAIL` set, a POST on workers.dev
+        had no `Cf-Access-Authenticated-User-Email` header, so the guard returned false and 403'd.
+        That guard was the *only* thing protecting writes on that hostname. Deleting the secret
+        flipped the deployed guard into its `if (!env.ADMIN_EMAIL) return true` no-op branch, so
+        upload / edit / **delete piece** / bulk-tag / reorder all became unauthenticated for about
+        40 minutes.
+      - **Lesson**: the TODO item that requested the `ADMIN_EMAIL` removal described it as
+        "redundant belt-and-braces". That was wrong, and it was repeated without checking. It was
+        the sole gate on a second hostname nobody had accounted for. **Verify a control is
+        redundant on every hostname before removing it**, not just the one you're thinking about.
+      - **Fix**: `"workers_dev": false`. Verified after deploy — every admin path 404s on
+        workers.dev, `klauria.art` still 200 with `/admin` still 302ing to Access.
+- [ ] **Open, medium: `/img/<key>` is an unrestricted read proxy for all of `ART_BUCKET`.**
+      `src/pages/img/[...key].ts` streams any key with no prefix check or allowlist, so
+      `/img/data/pieces.json` returns the whole metadata document (219KB). Nothing secret leaks
+      today — that document is already embedded in the home page and the originals are already
+      linked — but anything ever put in that bucket is world-readable by key, and the published
+      source makes that obvious. `BACKUP_BUCKET` is a separate binding and is not reachable this
+      way. Fix if wanted: restrict to keys starting with `assets/`.
+- [x] Repo is otherwise clean for publication: no secrets in the working tree or in any of the 74
+      commits (full `git log -p` scanned; after excluding the lockfile and generated Workers types
+      the only 32+ char strings left were `Cf-Access-Authenticated-User-Email` and doc phrases); no
+      `.env`/key/credential file ever committed; `wrangler.jsonc` carries no account or zone ID;
+      `.claude/` untracked; `/deploy-purge` correctly 404s with a missing or wrong token.
+- [x] `kslauria@gmail.com` appears in this file twice, but it is already the author email on all 74
+      commits, so publishing exposes it either way. Not worth rewriting history over — noted so the
+      decision is deliberate rather than an oversight.

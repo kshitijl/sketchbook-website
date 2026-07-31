@@ -479,6 +479,15 @@ Public read routes are outside this application entirely; they never see a login
   unauthenticated `/admin` request returns the `302`/`Set-Cookie` directly from
   `untitledtrading.cloudflareaccess.com`, never reaching Astro). The gate itself requires zero
   application auth code; it's pure edge configuration.
+- **Access is hostname-scoped, so `workers_dev` must stay off.** The Access application matches
+  `klauria.art/admin*` — a *hostname* pattern. It never covered
+  `31-art-website.klauria.workers.dev`, so while `workers_dev: true` was set, every `/admin/*`
+  route was reachable there with no authentication whatsoever. Found on 2026-07-30 during a
+  pre-publication audit; fixed by `"workers_dev": false` in `wrangler.jsonc`, which deletes that
+  hostname (verified: all admin paths now 404 there, `klauria.art` unaffected since the custom
+  domain is attached separately). **If `workers_dev` is ever turned back on, admin is wide open
+  again** — Access will not follow it. The general rule: any new hostname pointing at this Worker
+  needs its own Access application, because the app-side has no auth of its own.
 - **No in-app auth check. Access is the only gate** (removed 2026-07-30). There used to be a
   defense-in-depth `isAuthorizedAdminRequest()` (`src/lib/adminGuard.ts`) comparing
   `Cf-Access-Authenticated-User-Email` against an `ADMIN_EMAIL` Worker secret at the top of every
