@@ -1,7 +1,26 @@
 import { describe, it, expect } from 'vitest';
 import { getPieces, savePieces, updatePieces, ConflictError } from './data';
 import { EMPTY_PIECES_DATA } from './types';
-import type { PiecesData } from './types';
+import type { Piece, PiecesData } from './types';
+
+function makePiece(id: string): Piece {
+	return {
+		id,
+		title: 'Untitled',
+		date: '2024-01-01',
+		location: { lat: 0, lng: 0, placeName: 'Nowhere' },
+		tags: [],
+		notes: '',
+		favoriteRank: null,
+		assets: []
+	};
+}
+
+/** Single place this file builds a PiecesData, so the document's shape can change without
+ * touching every test. */
+function makeData(pieces: Piece[] = []): PiecesData {
+	return { pieces, pinnedLinks: [] };
+}
 
 /**
  * Minimal in-memory stand-in for R2Bucket, covering only what src/lib/data.ts actually uses:
@@ -71,7 +90,7 @@ describe('getPieces', () => {
 
 	it('returns the stored document and its etag after a write', async () => {
 		const b = bucket();
-		const doc: PiecesData = { pieces: [], pinnedLinks: [{ label: 'Setup', href: '/kind/setup' }] };
+		const doc = makeData([makePiece('piece-1')]);
 		await savePieces(asR2(b), doc, null);
 		const { data, etag } = await getPieces(asR2(b));
 		expect(data).toEqual(doc);
@@ -81,23 +100,23 @@ describe('getPieces', () => {
 
 describe('savePieces', () => {
 	it('writes unconditionally when expectedEtag is null (first write)', async () => {
-		const result = await savePieces(asR2(bucket()), { pieces: [], pinnedLinks: [] }, null);
+		const result = await savePieces(asR2(bucket()), makeData(), null);
 		expect(result.etag).toBeTruthy();
 	});
 
 	it('succeeds when expectedEtag matches the current stored etag', async () => {
 		const b = bucket();
-		const first = await savePieces(asR2(b), { pieces: [], pinnedLinks: [] }, null);
-		const second = await savePieces(asR2(b), { pieces: [], pinnedLinks: [] }, first.etag);
+		const first = await savePieces(asR2(b), makeData(), null);
+		const second = await savePieces(asR2(b), makeData(), first.etag);
 		expect(second.etag).toBeTruthy();
 	});
 
 	it('throws ConflictError when expectedEtag is stale', async () => {
 		const b = bucket();
-		const first = await savePieces(asR2(b), { pieces: [], pinnedLinks: [] }, null);
-		b.forceWrite({ pieces: [], pinnedLinks: [] }); // someone else writes in between
+		const first = await savePieces(asR2(b), makeData(), null);
+		b.forceWrite(makeData()); // someone else writes in between
 		await expect(
-			savePieces(asR2(b), { pieces: [], pinnedLinks: [] }, first.etag)
+			savePieces(asR2(b), makeData(), first.etag)
 		).rejects.toThrow(ConflictError);
 	});
 });
@@ -106,47 +125,41 @@ describe('updatePieces', () => {
 	it('reads, applies the mutation, and writes back', async () => {
 		const b = bucket();
 		await updatePieces(asR2(b), (data) => {
-			data.pinnedLinks.push({ label: 'Setup', href: '/kind/setup' });
+			data.pieces.push(makePiece('added'));
 		});
 		const { data } = await getPieces(asR2(b));
-		expect(data.pinnedLinks).toEqual([{ label: 'Setup', href: '/kind/setup' }]);
+		expect(data.pieces.map((p) => p.id)).toEqual(['added']);
 	});
 
 	it('retries exactly once on a single concurrent write, re-reading fresh data first', async () => {
 		const b = bucket();
-		b.forceWrite({ pieces: [], pinnedLinks: [{ label: 'Existing', href: '/tag/existing' }] });
+		b.forceWrite(makeData([makePiece('existing')]));
 
 		// The moment updatePieces does its (first) read, simulate one concurrent writer landing —
 		// so its first conditional put attempt is guaranteed to fail on a stale etag.
 		b.concurrentWriteOnNextGet = () => {
 			b.concurrentWriteOnNextGet = undefined; // exactly once
-			b.forceWrite({
-				pieces: [],
-				pinnedLinks: [
-					{ label: 'Existing', href: '/tag/existing' },
-					{ label: 'Concurrent', href: '/tag/concurrent' }
-				]
-			});
+			b.forceWrite(makeData([makePiece('existing'), makePiece('concurrent')]));
 		};
 
 		await updatePieces(asR2(b), (data) => {
-			data.pinnedLinks.push({ label: 'Mine', href: '/tag/mine' });
+			data.pieces.push(makePiece('mine'));
 		});
 
 		const { data } = await getPieces(asR2(b));
-		// All three must survive: the retry's re-read sees "Concurrent" already there and adds
-		// "Mine" on top of it, rather than clobbering it with a stale copy.
-		expect(data.pinnedLinks.map((l) => l.label).sort()).toEqual(['Concurrent', 'Existing', 'Mine']);
+		// All three must survive: the retry's re-read sees "concurrent" already there and adds
+		// "mine" on top of it, rather than clobbering it with a stale copy.
+		expect(data.pieces.map((p) => p.id).sort()).toEqual(['concurrent', 'existing', 'mine']);
 	});
 
 	it('gives up and throws ConflictError after exhausting retry attempts', async () => {
 		const b = bucket();
-		b.forceWrite({ pieces: [], pinnedLinks: [] });
+		b.forceWrite(makeData());
 
 		// Re-arms itself every time, so *every* attempt's conditional put is doomed to fail —
 		// this can never succeed no matter how many attempts are allowed.
 		const rearm = () => {
-			b.forceWrite({ pieces: [], pinnedLinks: [] });
+			b.forceWrite(makeData());
 			b.concurrentWriteOnNextGet = rearm;
 		};
 		b.concurrentWriteOnNextGet = rearm;
