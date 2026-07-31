@@ -1170,13 +1170,22 @@ three rounds because the drag was hand-rolled pointer-event code.
         redundant on every hostname before removing it**, not just the one you're thinking about.
       - **Fix**: `"workers_dev": false`. Verified after deploy — every admin path 404s on
         workers.dev, `klauria.art` still 200 with `/admin` still 302ing to Access.
-- [ ] **Open, medium: `/img/<key>` is an unrestricted read proxy for all of `ART_BUCKET`.**
-      `src/pages/img/[...key].ts` streams any key with no prefix check or allowlist, so
-      `/img/data/pieces.json` returns the whole metadata document (219KB). Nothing secret leaks
-      today — that document is already embedded in the home page and the originals are already
-      linked — but anything ever put in that bucket is world-readable by key, and the published
-      source makes that obvious. `BACKUP_BUCKET` is a separate binding and is not reachable this
-      way. Fix if wanted: restrict to keys starting with `assets/`.
+- [x] **Fixed: `/img/<key>` was an unrestricted read proxy for all of `ART_BUCKET`.**
+      `src/pages/img/[...key].ts` streamed any key with no prefix check, so
+      `/img/data/pieces.json` returned the whole metadata document (219KB). Now restricted to the
+      `assets/` prefix. Safe because the bucket has exactly two namespaces — images under
+      `assets/<pieceId>/...` (`assetR2Key()` in `src/lib/ids.ts`) and `data/pieces.json` — and all
+      1,172 image keys referenced by production data are under `assets/`, checked against the live
+      document before shipping. Also rejects keys containing `..`: R2 keys are opaque strings so
+      traversal isn't possible, but such a key is never ours. `BACKUP_BUCKET` is a separate binding
+      and was never reachable this way. Verified locally (seeded an `assets/` object -> 200 with
+      correct bytes; `data/pieces.json` and both traversal encodings -> 404) and in production
+      (real images 200, leak URL 404).
+      - Note on the deploy that shipped this: the post-deploy cache purge failed
+        (`404 Not found`, 8 attempts) and succeeded immediately on a manual re-run — the known
+        secret-propagation flakiness already described in architecture.md's Deploying section.
+        The script exits non-zero, so it failed loudly rather than silently skipping the purge.
+        Left the retry budget alone for a single occurrence.
 - [x] Repo is otherwise clean for publication: no secrets in the working tree or in any of the 74
       commits (full `git log -p` scanned; after excluding the lockfile and generated Workers types
       the only 32+ char strings left were `Cf-Access-Authenticated-User-Email` and doc phrases); no
