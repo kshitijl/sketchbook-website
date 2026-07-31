@@ -6,14 +6,21 @@ See `docs/architecture.md` for the full design. This is the ordered task breakdo
 **The owner is a grug-brain developer who hates pointless complexity and code bloat.** This is a
 standing preference, not a one-off complaint — every future change in this codebase should be
 weighed against it, not just the items below.
-- [ ] Remove the `ADMIN_EMAIL`/`isAuthorizedAdminRequest()` defense-in-depth check
-      (`src/lib/adminGuard.ts`, called from `admin/new.astro`, `admin/edit/[id].astro`,
-      `admin/favorites.astro`, `admin/bulk-tag.astro`). Flagged by the owner as pointless
-      complexity: Cloudflare Access is the real gate and already fully verified working (a `302` to
-      login for any unauthenticated request, before the Worker even runs) — this second in-app check
-      is redundant belt-and-braces the owner doesn't want. Removing it also deletes `src/env.d.ts`
-      (the declaration-merge file that only exists to type `ADMIN_EMAIL` as a secret) and the
-      `ADMIN_EMAIL` Worker secret itself, and simplifies all four call sites.
+- [x] **Done 2026-07-30.** Removed the `ADMIN_EMAIL`/`isAuthorizedAdminRequest()` defense-in-depth
+      check: `src/lib/adminGuard.ts` deleted, the guard block gone from all four call sites
+      (`admin/new.astro`, `admin/edit/[id].astro`, `admin/favorites.astro`, `admin/bulk-tag.astro`),
+      the `ADMIN_EMAIL` declarations dropped from `src/env.d.ts`, the stale explanatory comment
+      dropped from `wrangler.jsonc`, and the Worker secret deleted. Cloudflare Access is the real
+      gate and is verified working. **Correction to this item as originally written**: it claimed
+      the removal "also deletes `src/env.d.ts`". It does not — that file also declares
+      `DEPLOY_PURGE_TOKEN` (still live, read by `src/pages/deploy-purge.ts`) and `IMAGES`, so only
+      the two `ADMIN_EMAIL` lines came out. Verified after: `astro check` 0 errors across 49 files
+      (was 50), 59/59 tests, all five `/admin/*` routes still 200, and a real favorites reorder
+      POST round-tripped through R2 in a browser.
+      - [ ] Follow-up spotted while doing this: `src/env.d.ts` still declares the `IMAGES` binding,
+            but nothing in `src/` references `env.IMAGES` any more — it went dead when the
+            Cloudflare Images binding was dropped in favour of pre-generated variants. Probably
+            removable; not touched here to keep this change to one thing.
 - [ ] Full pass over the codebase and `docs/architecture.md`/this file for other pointless
       complexity introduced without being asked for — abstractions, tests, defensive checks, or
       "nice to have" infrastructure the owner never actually requested. Go looking for it

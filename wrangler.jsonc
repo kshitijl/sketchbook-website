@@ -40,10 +40,4 @@
 	// the way it was on a `--domain` deploy attempt that then failed (a real incident during
 	// setup — the site went down until this was made explicit and redeployed).
 	"workers_dev": true
-	// ADMIN_EMAIL is set as a real Worker secret (`wrangler secret put ADMIN_EMAIL`), not a `vars`
-	// entry — a secret and a `vars` entry can't share the same binding name, and this value doesn't
-	// belong in plaintext config anyway now that it's a real address rather than a placeholder. Its
-	// absence here means local dev (which has no way to set Worker secrets) leaves
-	// isAuthorizedAdminRequest() no-oping, same as before — expected, since Access itself doesn't
-	// exist locally either.
 }

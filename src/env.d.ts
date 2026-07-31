@@ -6,13 +6,11 @@
 // already declared ambiently by the Cloudflare Workers types (see worker-configuration.d.ts).
 declare global {
 	interface Env {
-		ADMIN_EMAIL?: string;
 		DEPLOY_PURGE_TOKEN?: string;
 		IMAGES: ImagesBinding;
 	}
 	namespace Cloudflare {
 		interface Env {
-			ADMIN_EMAIL?: string;
 			DEPLOY_PURGE_TOKEN?: string;
 			IMAGES: ImagesBinding;
 		}

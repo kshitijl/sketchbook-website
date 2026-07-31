@@ -455,11 +455,15 @@ Public read routes are outside this application entirely; they never see a login
   unauthenticated `/admin` request returns the `302`/`Set-Cookie` directly from
   `untitledtrading.cloudflareaccess.com`, never reaching Astro). The gate itself requires zero
   application auth code; it's pure edge configuration.
-- **Defense-in-depth**: the Worker also reads `Cf-Access-Authenticated-User-Email` and compares it
-  against an `ADMIN_EMAIL` Worker secret (`src/lib/adminGuard.ts`) before allowing any mutation —
-  redundant with Access's own policy by design, in case the Access application is ever
-  misconfigured or briefly disabled. This check no-ops (always allows) when `ADMIN_EMAIL` is unset,
-  which is true for local dev, since Access itself doesn't exist there either.
+- **No in-app auth check. Access is the only gate** (removed 2026-07-30). There used to be a
+  defense-in-depth `isAuthorizedAdminRequest()` (`src/lib/adminGuard.ts`) comparing
+  `Cf-Access-Authenticated-User-Email` against an `ADMIN_EMAIL` Worker secret at the top of every
+  mutation handler. The owner flagged it as pointless complexity and it's gone, along with the
+  secret and its type declaration: Access is verified working (a `302` to login before the Worker
+  runs at all), and the check no-op'd whenever `ADMIN_EMAIL` was unset — which was true for all of
+  local dev — so it never ran anywhere except production, where Access had already done the job.
+  Four call sites got simpler. If a second editor is ever added, the answer is another Access
+  policy, not application code.
 
 ## Map + inline detail (one of two JS islands)
 

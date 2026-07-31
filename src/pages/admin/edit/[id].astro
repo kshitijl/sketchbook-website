@@ -9,7 +9,6 @@ import { getImageDimensions } from '../../../lib/imageDimensions';
 import { ASSET_KIND_LABELS, ASSET_KINDS } from '../../../lib/assetKinds';
 import { getVariantFiles, imageUrl } from '../../../lib/images';
 import { purgePages } from '../../../lib/purge';
-import { isAuthorizedAdminRequest } from '../../../lib/adminGuard';
 import { backupAsset, backupPieceData, logBackupEvent } from '../../../lib/backup';
 import type { AssetKind } from '../../../lib/types';
 
@@ -54,10 +53,6 @@ let values = piece
 		};
 
 if (piece && Astro.request.method === 'POST') {
-	if (!isAuthorizedAdminRequest(Astro.request, env)) {
-		return new Response('Forbidden', { status: 403 });
-	}
-
 	const formData = await Astro.request.formData();
 
 	if (formData.get('intent') === 'delete') {

@@ -8,7 +8,6 @@ import { generateAssetId, generatePieceId, buildAssetKey } from '../../lib/ids';
 import { getImageDimensions } from '../../lib/imageDimensions';
 import { getVariantFiles } from '../../lib/images';
 import { purgePages } from '../../lib/purge';
-import { isAuthorizedAdminRequest } from '../../lib/adminGuard';
 import { backupAsset, backupPieceData, logBackupEvent } from '../../lib/backup';
 import { ASSET_KINDS } from '../../lib/assetKinds';
 import type { Asset, AssetKind, Piece } from '../../lib/types';
@@ -35,10 +34,6 @@ let values = {
 };
 
 if (Astro.request.method === 'POST') {
-	if (!isAuthorizedAdminRequest(Astro.request, env)) {
-		return new Response('Forbidden', { status: 403 });
-	}
-
 	const formData = await Astro.request.formData();
 
 	values = {

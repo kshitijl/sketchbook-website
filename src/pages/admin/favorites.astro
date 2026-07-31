@@ -5,16 +5,11 @@ import PieceThumb from '../../components/PieceThumb.astro';
 import { getPieces, updatePieces } from '../../lib/data';
 import { compareDatesDescending } from '../../lib/facets';
 import { purgePages } from '../../lib/purge';
-import { isAuthorizedAdminRequest } from '../../lib/adminGuard';
 import { backupPieceData, logBackupEvent } from '../../lib/backup';
 
 Astro.response.headers.set('Cache-Control', 'no-store');
 
 if (Astro.request.method === 'POST') {
-	if (!isAuthorizedAdminRequest(Astro.request, env)) {
-		return new Response('Forbidden', { status: 403 });
-	}
-
 	const formData = await Astro.request.formData();
 	// One repeated hidden input per favorited piece, in DOM order — which the browser reproduces
 	// as submission order for repeated form fields. Dragging a piece's <li> around in the browser

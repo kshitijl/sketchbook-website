@@ -5,7 +5,6 @@ import PieceThumb from '../../components/PieceThumb.astro';
 import { getPieces, updatePieces } from '../../lib/data';
 import { getPiecesByDateDescending, getTagFrequency } from '../../lib/facets';
 import { purgePages } from '../../lib/purge';
-import { isAuthorizedAdminRequest } from '../../lib/adminGuard';
 import { backupPieceData, logBackupEvent } from '../../lib/backup';
 
 Astro.response.headers.set('Cache-Control', 'no-store');
@@ -14,10 +13,6 @@ const errors: string[] = [];
 let notice = '';
 
 if (Astro.request.method === 'POST') {
-	if (!isAuthorizedAdminRequest(Astro.request, env)) {
-		return new Response('Forbidden', { status: 403 });
-	}
-
 	const formData = await Astro.request.formData();
 	const intent = formData.get('intent') === 'remove' ? 'remove' : 'add';
 	const tags = String(formData.get('tags') ?? '')
