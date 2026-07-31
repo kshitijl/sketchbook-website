@@ -26,15 +26,16 @@ weighed against it, not just the items below.
             nothing uses `astro:assets` (checked: no `<Image>`/`<Picture>`, and Leaflet's marker
             PNGs already import with `?url`). Verified by diffing `dist/server/wrangler.json`
             across a rebuild: `images` gone, both R2 buckets and the `SESSION` KV still there.
-- [ ] Full pass over the codebase and `docs/architecture.md`/this file for other pointless
-      complexity introduced without being asked for — abstractions, tests, defensive checks, or
-      "nice to have" infrastructure the owner never actually requested. Go looking for it
-      specifically rather than assuming there isn't more; the `ADMIN_EMAIL` check above was missed
-      until the owner caught it themselves. Candidates worth scrutinizing on this pass: whether all
-      57 Vitest tests are pulling their weight for a site this size, whether the backup system's
-      daily-reconciliation-as-a-separate-Worker split is more machinery than needed, and whether any
-      "generalized for future flexibility" code (e.g. `assets[].kind` as an open enum,
-      `/kind/<kind>` template) is solving a problem that doesn't exist yet.
+- [x] **Done 2026-07-31** — the architecture review (`docs/architecture-review-2026-07-31.md`)
+      was this pass. Conclusions on the named candidates: the Vitest tests are pure-logic, fast,
+      and test real invariants — keep; the separate backup reconciliation Worker is the right
+      "boring and hard to break" split — keep; the `assets[].kind` open enum and `/kind/<kind>`
+      template are in active use (`/kind/setup` feeds the planned easel page) — keep. New
+      complexity it *did* find: the adapter-injected SESSION KV binding nothing uses (TODO'd in
+      the 2026-07-31 section below, same class as the `ADMIN_EMAIL`/IMAGES removals), the
+      HEIC→PNG master conversion (bigger *and* less pristine than storing the uploaded bytes —
+      also TODO'd below), plus minor dead code noted in the review (unused `getPiecesByPlace()`,
+      the two completed one-time migration scripts).
 - [x] **Done 2026-07-30.** Removed `pinnedLinks` (`PiecesData.pinnedLinks` and the `PinnedLink`
       interface) from `types.ts` and `EMPTY_PIECES_DATA`. It was fully dead: never an admin UI to
       write it, and nothing has read it since the 2026-07-22 home page redesign replaced it with
@@ -1194,3 +1195,135 @@ three rounds because the drag was hand-rolled pointer-event code.
 - [x] `kslauria@gmail.com` appears in this file twice, but it is already the author email on all 74
       commits, so publishing exposes it either way. Not worth rewriting history over — noted so the
       decision is deliberate rather than an oversight.
+
+## Architecture review: storage math, HEIC masters, leftover session binding (2026-07-31)
+
+Full review written to `docs/architecture-review-2026-07-31.md` (production numbers: 120 pieces /
+293 assets, 3.01 GB primary + 2.8 GB backup = 5.8 GB of the 10 GB R2 free tier — on track to
+exhaust it around ~200 pieces). Same pass: trued up `docs/architecture.md` (submit-time
+Pica/heic-to variant pipeline, carousels, nearby map + timeline neighbors, two-level timeline,
+tag categories, drag-and-drop) and added a restore runbook to its Backups section.
+
+**Suggested implementation order** for the items below: (1) the SESSION binding removal — tiny,
+with a built-in verification recipe; note the sequencing matters: verify via the
+`dist/server/wrangler.json` diff, deploy, and only *then* delete the KV namespace, never before.
+(2) The dead-code deletion — also tiny, natural to pair with (1) in the same deploy. (3) The
+HEIC→WebP master change — the main one; its verify-before-trusting steps are baked into the item
+(a desktop-Firefox upload test with `IMG_5782.HEIC`, left untracked in the repo root on purpose,
+and eyeballing the q0.9 full-res output). Implement the low-res-preview item's fail-loud
+small-image warning in the same change — it lives in the same submit flow in `pieceForm.ts`.
+(4) The low-res-preview re-uploads — owner-paced, whenever; the script that prints the list is
+ten lines against `pieces.json`. (5) The rclone backup script — independent of the others, can
+happen anytime. As always: deploys only via `npm run deploy`, never the steps by hand.
+
+- [ ] **Re-encode HEIC uploads to one high-quality full-res WebP and store *that* as the
+      master.** (Owner decision 2026-07-31, superseding two earlier drafts of this entry — see
+      the rejected-alternatives bullet.) The reasoning: this site is an archive of the *artwork* —
+      the high-quality PNG scans, which are uploaded as PNG and stored byte-for-byte, stay exactly
+      as pristine as ever. Phone photos (progress/reference/setup shots) were never pristine to
+      begin with, and their true originals already live in the owner's iCloud account, backed up
+      as a personal-life concern entirely separate from this site. The HEIC bytes are not a temple
+      to preserve — one high-quality WebP re-encode is the master, the "original", and the
+      full-res view all at once.
+      - Design: at submit time (pieceForm.ts), the HEIC is decoded **once** (heic-to → bitmap),
+        and that one bitmap is the source for **four independent WebP encodes**: the full-res
+        master at quality 0.9 (it becomes the only copy of these pixels the site keeps, so spend
+        a little more than the variants' 0.82 — measured 4.7MB vs 3.3MB on the sample below,
+        both far under today's 32MB), plus the thumb/card/big variants at 0.82 exactly as now.
+        **One decompress, four compresses — never HEIC → master WebP → variant** (re-encoding a
+        variant from the q0.9 WebP would be a pointless second lossy hop; every encode must read
+        the decoded HEIC pixels directly). Structurally this is just `makeVariants()` gaining a
+        fourth output from the bitmap it already decodes. The full-res WebP is what gets
+        uploaded as `asset_final`/`asset_extra` — stored under `r2Key` as the master, backed up
+        like any master, and served by "View full resolution", which now works in every browser.
+        JPEG/PNG uploads are untouched (stored byte-for-byte, as today). **No type changes, no
+        optional fields, no fourth size field** — every asset keeps the same shape, and every
+        master is browser-viewable.
+      - Measured 2026-07-31 (`IMG_5782.HEIC`, 5712×4284 / 24.5MP — the iPhone Pro default
+        resolution): original HEIC 4.5MB; the lossless PNG stored today **32MB**; full-res WebP
+        q90 **4.7MB**; q82 3.3MB. **~7× storage savings per phone photo vs today.** (Encoded
+        with ImageMagick/cwebp as a proxy; the browser's canvas/Pica encoder will differ somewhat
+        but stay in the same ballpark.)
+      - Canvas-size caveat, re-scoped 2026-07-31: uploads only ever happen from desktop Firefox
+        (the owner never uploads from a phone), so the original worry about iOS Safari's
+        canvas-area limits mostly doesn't apply — but the full-res encode still needs a ~24.5MP
+        destination canvas (Pica tiles the *source*, not the destination), so verify the real
+        flow once in desktop Firefox with `IMG_5782.HEIC` before trusting it, and cap the
+        re-encoded master's width (~4000px) only if that actually fails. PNG scans never go
+        through this path (stored as uploaded), so scan resolution doesn't matter here.
+      - Verification tip: the site already has the perfect tool — the `/piece/<id>?added=1`
+        post-add diagnostic view renders every asset's original/big/card/thumb with their actual
+        delivered size and content-type. After uploading `IMG_5782.HEIC`, the original row
+        should read `image/webp` at ~4–5MB (not `image/png` at ~32MB, and not `image/heic`).
+        Also add `*.HEIC` to `.gitignore` so the test file can't be committed by accident.
+      - Considered along the way, all rejected: **keep converting to lossless PNG** (today's
+        behavior — 7× inflation, and the PNG is arguably *less* original than the uploaded
+        bytes); **store the raw HEIC as master** (smallest and most pristine, but non-Safari
+        browsers can't display it, forcing either a download-only full-res link or an extra
+        per-asset display-copy key + optional `fullKey?` field — overcomplicated for photos whose
+        real originals are in iCloud); **generation-loss purism** (HEIC→WebP is a second lossy
+        generation, which would matter under an archival premise these photos don't carry).
+      - Known consequence: `getImageDimensions()` parses PNG/JPEG headers only, so a WebP master
+        stores width/height as 0,0 — already the accepted fallback. Optional cheap fix if it ever
+        bothers layout: the client has the decoded bitmap anyway and could post width/height
+        fields with the upload.
+      - No migration needed, verified against production metadata 2026-07-31: zero
+        HEIC-converted PNG masters exist. All 158 phone-photo masters are JPEGs, even though the
+        owner uploads exclusively from desktop Firefox dragging out of macOS Photos, and HEIC
+        drops definitely happened at least sometimes (they used to fail outright, which is why
+        the HEIC code was written). **The exact rule for when a drag delivers JPEG vs raw .heic
+        was not pinned down** — EXIF can't distinguish shot-as-JPEG from converted-on-export
+        (Make/Model/Software survive conversion); candidates are the phone's Most Compatible
+        setting, Photos' drag-export conversion, or macOS version differences. A 30-second local
+        test settles it if it ever matters: drag a recent photo to the Desktop and look at the
+        extension. Either way this fix covers the HEIC case whenever it occurs, and all PNG
+        masters are artwork scans that stay untouched. (This investigation also surfaced the
+        low-res-preview problem — see the dedicated item below.)
+- [ ] **Remove the unused SESSION KV binding** — same class as the removed IMAGES binding.
+      Nothing uses `Astro.session`, but `@astrojs/cloudflare` force-enables KV-backed sessions
+      whenever astro.config has no `session.driver` (checked in the adapter source), emitting
+      `"kv_namespaces": [{"binding": "SESSION"}]` into the generated deploy config and
+      auto-provisioning a real namespace (`31-art-website-session`,
+      id `6c3df735f300479e8deddfc2216daa9a`). Plan: set a non-KV driver in astro.config.mjs
+      (`session: { driver: 'memory' }` — driver choice is irrelevant since sessions are never
+      used), verify by diffing `dist/server/wrangler.json` that `kv_namespaces` is gone (same
+      verification as the IMAGES removal), deploy, then
+      `npx wrangler kv namespace delete --namespace-id 6c3df735f300479e8deddfc2216daa9a`.
+- [ ] **59 phone-photo masters are ~1024×768 previews, not real photos — the iCloud
+      "Optimize Mac Storage" drag gotcha.** Found 2026-07-31 while investigating the HEIC/JPEG
+      question: of the 158 phone-photo masters, 43 are 1024×768 and 16 are 768×1024 (~20% of all
+      assets). Verified by EXIF on a sample: a real iPhone SE photo stored at 1024×768 —
+      dragging a photo out of macOS Photos while its original lives only in iCloud silently
+      hands over the small local preview instead of the full image. Nothing is lost (the
+      originals are in iCloud), but these 59 uploads are permanently low-res until re-uploaded.
+      - Owner's call: re-upload them (a small script against `pieces.json` can print the list —
+        piece id/title, asset kind, dims — to work through; the edit page's existing per-asset
+        replace flow handles the rest) or accept them, since low-res may be fine for reference
+        photos. Reading production metadata for that list is one command, no code deploy:
+        `npx wrangler r2 object get 31-art-website-data/data/pieces.json --remote --pipe`
+        piped into a few lines of node filtering assets with `width <= 1024 && height <= 1024`.
+      - Prevention, worth doing regardless: `makeVariants()` already decodes every image at
+        submit time and knows its true pixel size — make the submit flow warn (or block behind a
+        confirm) when a photo is under ~1500px on its long side, so the degraded-preview case
+        fails loudly at upload instead of silently archiving a thumbnail. Fits the existing
+        fail-loud philosophy.
+      - Workflow note meanwhile: before dragging from Photos, make sure the photo is fully
+        downloaded (open it and let it sharpen / no low-res indicator), or use
+        File → Export → Unmodified Originals.
+- [ ] **Delete the dead code the review found.** `getPiecesByPlace()` in `src/lib/facets.ts` has
+      no callers (drop its tests with it), and `scripts/backfill-image-variants.mjs` +
+      `scripts/reorient-image-variants.mjs` are completed one-time migrations — git history keeps
+      them if ever needed again. Caveat before deleting the backfill script: the restore runbook
+      in architecture.md's Backups section currently names it as the way to regenerate a lost
+      variant, so either keep it for that or update the runbook to say "check it out from git
+      history" when deleting. (`scripts/check-caching.mjs` and `scripts/deploy-purge.mjs` are
+      *not* dead — the former is the post-upgrade cache canary, the latter runs on every deploy.)
+- [ ] **Off-Cloudflare backup: a small rclone pull of the backup bucket.** Both buckets, the
+      auth, and the domain live in one Cloudflare account — an account takeover/suspension loses
+      the backups too. The collection is already irreplaceable-sized (2.8 GB), so stop deferring.
+      Plan: create a read-only R2 API token scoped to `31-art-website-backups`, configure rclone's
+      S3-compatible R2 remote, and document the one-liner —
+      `rclone copy r2-backup:31-art-website-backups ~/backups/31-art-website` — to run by hand
+      every so often (`copy`, not `sync`: it never deletes local files, matching the bucket's own
+      append-only rule). A script/doc note in `scripts/` + the architecture.md Backups section;
+      no automation beyond that unless running it manually proves to be forgotten in practice.
