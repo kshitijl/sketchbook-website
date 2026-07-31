@@ -83,17 +83,19 @@ A single object, `data/pieces.json`, holding:
 
 ```json
 {
-  "pieces": [ { "...piece record...": true } ],
-  "pinnedLinks": []
+  "pieces": [ { "...piece record...": true } ]
 }
 ```
 
-`pinnedLinks` is dead weight at this point — there was never an admin UI to write it, and as of
-the 2026-07-22 home page redesign nothing reads it either (the one thing it was ever meant to hold,
-an "Easel Setup" quick link, is now just hardcoded directly in the header nav, since building a
-whole editable-links feature for two or three fixed destinations was never worth it). Still present
-in the type/stored document only because removing it hasn't been done yet — see docs/TODO.md's
-standing simplicity-audit item.
+**`pinnedLinks` was removed from the type on 2026-07-30.** It was an admin-editable quick-links
+list that never got an admin UI to write it, and after the 2026-07-22 home page redesign nothing
+read it either (the one thing it was ever meant to hold, an "Easel Setup" link, is hardcoded in
+the header nav — building an editable-links feature for two or three fixed destinations was never
+worth it). **No data migration was needed or done**: `data.ts` casts the parsed JSON and
+re-stringifies whatever object it read, so documents already in R2 keep their now-undeclared
+`pinnedLinks` key and it survives every subsequent write untouched. Verified by writing through
+the admin UI after the removal and reading the stored blob back — top-level keys were still
+`['pieces', 'pinnedLinks']`. It's inert either way; there's nothing to clean up unless you want to.
 
 At ~1,000 pieces with generous fields, this is roughly 1-2MB uncompressed / a few hundred KB gzipped —
 cheap to read, cheap to write, cheap to ship to the browser whole for the map/timeline islands.
@@ -771,5 +773,7 @@ density over `date` — surfaced as the interactive activity bar chart, stacked 
 - ~~Open, unresolved: how should `DEPLOY_PURGE_TOKEN` actually be managed across sessions?~~
   **Resolved (2026-07-23)**: see the Deploying section above — `npm run deploy` regenerates it
   fresh every time via `scripts/deploy-purge.mjs`, so it never needs to persist anywhere.
-- Removing the now-fully-dead `pinnedLinks` field/type, and the general codebase complexity audit
-  the owner asked for — tracked in docs/TODO.md's standing simplicity-audit section, not done yet.
+- ~~Removing the now-fully-dead `pinnedLinks` field/type~~ **done 2026-07-30**, along with the
+  `ADMIN_EMAIL` defense-in-depth check — see the Metadata storage and Auth sections. The broader
+  codebase complexity audit the owner asked for is still open, tracked in docs/TODO.md's standing
+  simplicity-audit section.

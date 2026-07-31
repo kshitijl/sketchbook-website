@@ -33,7 +33,7 @@ function makePiece(overrides: Partial<Piece> = {}): Piece {
 }
 
 function makeData(pieces: Piece[]): PiecesData {
-	return { pieces, pinnedLinks: [] };
+	return { pieces };
 }
 
 describe('getPieceById', () => {

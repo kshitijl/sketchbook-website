@@ -19,7 +19,7 @@ function makePiece(id: string): Piece {
 /** Single place this file builds a PiecesData, so the document's shape can change without
  * touching every test. */
 function makeData(pieces: Piece[] = []): PiecesData {
-	return { pieces, pinnedLinks: [] };
+	return { pieces };
 }
 
 /**

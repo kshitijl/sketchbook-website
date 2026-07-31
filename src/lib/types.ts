@@ -39,17 +39,10 @@ export interface Piece {
 	assets: Asset[];
 }
 
-export interface PinnedLink {
-	label: string;
-	href: string;
-}
-
 export interface PiecesData {
 	pieces: Piece[];
-	pinnedLinks: PinnedLink[];
 }
 
 export const EMPTY_PIECES_DATA: PiecesData = {
-	pieces: [],
-	pinnedLinks: []
+	pieces: []
 };

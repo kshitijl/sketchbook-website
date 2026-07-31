@@ -30,11 +30,13 @@ weighed against it, not just the items below.
       daily-reconciliation-as-a-separate-Worker split is more machinery than needed, and whether any
       "generalized for future flexibility" code (e.g. `assets[].kind` as an open enum,
       `/kind/<kind>` template) is solving a problem that doesn't exist yet.
-- [ ] `pinnedLinks` (`PiecesData.pinnedLinks`, `types.ts`) is now fully dead: there was never an
-      admin UI to write it, and as of the 2026-07-22 home page redesign nothing reads it either
-      (replaced with 3 hardcoded links — Timeline/Map/`/kind/setup` — directly in `index.astro`,
-      since that's all it was ever going to hold). Remove the field/type entirely rather than
-      leaving it as unused shape.
+- [x] **Done 2026-07-30.** Removed `pinnedLinks` (`PiecesData.pinnedLinks` and the `PinnedLink`
+      interface) from `types.ts` and `EMPTY_PIECES_DATA`. It was fully dead: never an admin UI to
+      write it, and nothing has read it since the 2026-07-22 home page redesign replaced it with
+      hardcoded links in `index.astro`. Only two other references existed, both test fixtures.
+      **No data migration**: `data.ts` casts the parsed JSON and re-stringifies it, so existing
+      documents keep the now-undeclared key through every write — confirmed by writing via the
+      admin UI afterwards and reading the stored blob back (`['pieces', 'pinnedLinks']`).
 - [ ] Fix the process, not just the code: every subsequent edit in this codebase must be
       self-reviewed against this preference before considering it done — would the owner call this
       simple, or would they call it bloat? Lean toward the boring, obvious, least-code solution over
@@ -92,8 +94,9 @@ weighed against it, not just the items below.
 - [x] Id-generation scheme: `<date>-<slugified-title>` with numeric suffix on collision —
       `src/lib/ids.ts`. Asset keys get a `Date.now()` version suffix so replacing an image never
       needs cache invalidation.
-- [ ] Seed an initial empty `data/pieces.json` (`{ "pieces": [], "pinnedLinks": [] }`) in the *real*
-      R2 bucket once it exists (code already handles a missing object as the empty-data case)
+- [ ] Seed an initial empty `data/pieces.json` (`{ "pieces": [] }` — `pinnedLinks` was removed
+      2026-07-30) in the *real* R2 bucket once it exists (code already handles a missing object as
+      the empty-data case)
 - [ ] Write a small internal script/route to bulk-import pieces later (used in Phase 7)
 
 ## Phase 2 — Public read pages
