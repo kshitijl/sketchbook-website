@@ -267,6 +267,17 @@ every page also renders a small debug footer (see Base.astro) showing the render
 colo — if reloading the same URL keeps showing the same timestamp, that request was served from
 cache, not re-rendered.
 
+The footer also reports **which build is serving the page**: `deployed <timestamp> (<commit>)`,
+added 2026-07-30. These are baked in at build time by Vite's `define` (see `astro.config.mjs`) —
+the Worker has no git and no build clock at runtime, so build time is the only point either is
+knowable, and since `npm run deploy` builds and deploys in one shot, a deployed page's build time
+*is* its deploy time. The commit comes from `git describe --always --dirty`, so a build made with
+uncommitted changes is labelled `<hash>-dirty` rather than silently claiming to be that commit.
+This exists to separate two failure modes that look identical from the outside: a page that looks
+stale because it's a cache artifact (same `renderId` on reload) versus one that looks stale because
+old code is still deployed (an older commit than you expect). Deliberately no try/catch around the
+`git` call — if git isn't available the build should fail loudly rather than ship "unknown".
+
 **A real gap found after this design was already live**: `purgePages()` (originally
 `purgeEverything()`) only ever runs from inside an authenticated admin write handler — a pure code
 deploy with no accompanying data edit never purges anything. Caught live when a route removed in a
@@ -398,6 +409,17 @@ because the encoder over-spends bits and preserves the previous generation's art
 transform + error-fallback machinery; and, for oversized images, a double lossy re-encode. Removing
 the binding deletes all of that. (An earlier intermediate fix — a `displayKey` "access copy" for
 just the >20MB images — was itself a workaround for the 20MB limit and is fully superseded by this.)
+
+**The binding itself is fully gone as of 2026-07-30.** Dropping `env.IMAGES` from the *code* left
+the binding still being injected: `@astrojs/cloudflare` wires up Cloudflare Images by default and
+emits `"images": {"binding": "IMAGES"}` into the generated deploy config, and `src/env.d.ts` still
+declared it — so the Worker kept getting a binding nothing referenced. Fixed by
+`cloudflare({ imageService: 'passthrough' })` in `astro.config.mjs` plus deleting the declaration.
+Safe because nothing here uses `astro:assets` at all: every image is a plain `<img>` at a
+pre-generated R2 variant, and the only bundled image imports (Leaflet's marker PNGs in
+`src/scripts/leafletIcons.ts`) already use `?url` to bypass the pipeline. Verified by diffing
+`dist/server/wrangler.json` before and after — the `images` key is gone, `ART_BUCKET`,
+`BACKUP_BUCKET` and the `SESSION` KV namespace all still present.
 
 **Generation happens at upload, in the browser.** The Worker can't resize a 20–30MB scan (Workers
 memory + no image lib we want to ship there), so `src/scripts/pieceForm.ts`'s `makeVariants()`

@@ -19,6 +19,11 @@ const { title, description = "I draw and paint from life, in a sketchbook. It's 
 const renderedAt = new Date().toISOString();
 const renderId = crypto.randomUUID();
 const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
+// Substituted at build time by Vite's `define` (see astro.config.mjs). `renderedAt` above says
+// when this HTML was generated; these say which build generated it — the pair is what tells you
+// whether a stale-looking page is a cache artifact or just old code still deployed.
+const deployedAt = __BUILD_TIME__;
+const deployedCommit = __BUILD_COMMIT__;
 ---
 
 <html lang="en">
@@ -689,8 +694,8 @@ const colo = (Astro.request as { cf?: { colo?: string } }).cf?.colo ?? 'local';
 		</header>
 		<slot />
 		<footer class="debug" data-render-id={renderId}>
-			rendered {renderedAt} · edge: {colo} · id: {renderId} · <a href="/admin">Admin</a> ·{' '}
-			<a href="/admin/new">Add new piece</a>
+			rendered {renderedAt} · edge: {colo} · id: {renderId} · deployed {deployedAt} ({deployedCommit}) ·{' '}
+			<a href="/admin">Admin</a> · <a href="/admin/new">Add new piece</a>
 		</footer>
 	</body>
 </html>

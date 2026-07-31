@@ -17,10 +17,15 @@ weighed against it, not just the items below.
       the two `ADMIN_EMAIL` lines came out. Verified after: `astro check` 0 errors across 49 files
       (was 50), 59/59 tests, all five `/admin/*` routes still 200, and a real favorites reorder
       POST round-tripped through R2 in a browser.
-      - [ ] Follow-up spotted while doing this: `src/env.d.ts` still declares the `IMAGES` binding,
-            but nothing in `src/` references `env.IMAGES` any more — it went dead when the
-            Cloudflare Images binding was dropped in favour of pre-generated variants. Probably
-            removable; not touched here to keep this change to one thing.
+      - [x] **Done 2026-07-30.** Follow-up spotted while doing the above: `src/env.d.ts` declared
+            an `IMAGES` binding nothing referenced any more. Removing the declaration alone wasn't
+            enough — `@astrojs/cloudflare` enables Cloudflare Images by default and was still
+            emitting `"images": {"binding": "IMAGES"}` into the generated deploy config, so the
+            Worker kept receiving a binding for a feature the site abandoned. Fixed with
+            `cloudflare({ imageService: 'passthrough' })` in `astro.config.mjs`. Safe because
+            nothing uses `astro:assets` (checked: no `<Image>`/`<Picture>`, and Leaflet's marker
+            PNGs already import with `?url`). Verified by diffing `dist/server/wrangler.json`
+            across a rebuild: `images` gone, both R2 buckets and the `SESSION` KV still there.
 - [ ] Full pass over the codebase and `docs/architecture.md`/this file for other pointless
       complexity introduced without being asked for — abstractions, tests, defensive checks, or
       "nice to have" infrastructure the owner never actually requested. Go looking for it
@@ -1120,3 +1125,26 @@ three rounds because the drag was hand-rolled pointer-event code.
       toggled from `onStart`/`onEnd` with a `cursor: grabbing` rule, ~5 lines.
 - [ ] **Also not fixed**: starting from zero favorites, the server-rendered "No favorites yet — add
       some below." line stays on screen after you add one. Cosmetic only.
+
+## Dead-field data cleanup, IMAGES binding removal, build stamp in the footer (2026-07-30)
+- [x] **Removed `pinnedLinks` from the stored production data**, not just the type — the earlier
+      type-only removal left a dangling key in `data/pieces.json`. Done carefully, since this is a
+      direct write to production R2 that bypasses the app's own conditional-write and automatic
+      snapshot: pulled the live document first (120 pieces, 293 assets, 14 favorites, 220KB),
+      verified `pinnedLinks` was an empty array so nothing was being discarded, saved it **twice**
+      (a local copy plus an append-only snapshot at
+      `backups/pieces/2026-07-31T00-14-32-000Z-pre-pinnedlinks-removal.json` in the backup bucket,
+      read back to confirm it landed), rebuilt the document with only `pieces`, and proved the
+      `pieces` array was byte-identical before uploading. Post-write readback confirmed
+      `['pieces']` and a byte-identical `pieces`. Live site re-verified on genuine cache MISSes
+      (`?cb=<random>`, one request per key — note the naive check gives a false HIT because the
+      first request warms the cache for the second).
+- [x] **Debug footer now reports the running build**: `deployed <timestamp> (<commit>)` alongside
+      the existing render timestamp / colo / renderId. Baked in via Vite `define` in
+      `astro.config.mjs`; `git describe --always --dirty` so an uncommitted build is marked
+      `-dirty`. Separates "stale because cached" from "stale because old code is deployed".
+      - Needed `@types/node` as a devDependency — `astro.config.mjs` is `// @ts-check`ed and now
+        imports `node:child_process`. Confirmed it doesn't collide with the Workers types.
+      - Gotcha: the `__BUILD_COMMIT__`/`__BUILD_TIME__` declarations must go *inside*
+        `declare global` in `src/env.d.ts`. That file is a module, so a top-level `declare const`
+        is only visible within the file itself — it typechecked as missing everywhere else.
