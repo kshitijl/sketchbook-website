@@ -83,6 +83,7 @@ const rest = data.pieces
 		<ul id="restList" class="fav-list">
 			{rest.map((piece) => (
 				<li data-id={piece.id}>
+					<span class="drag-handle">⠿</span>
 					<PieceThumb piece={piece} size={48} />
 					<a href={`/piece/${piece.id}`}>{piece.title}</a>
 					<span class="muted">— {piece.date}</span>
@@ -106,16 +107,25 @@ const rest = data.pieces
 		gap: 0.5rem;
 		margin-bottom: 0.5rem;
 		background: var(--bg);
-		touch-action: none;
 	}
-	.fav-list li.dragging {
-		opacity: 0.5;
+	/* The row being carried around under the cursor. */
+	.fav-list li.sortable-drag {
+		box-shadow: 0 6px 16px rgba(20, 20, 20, 0.25);
+	}
+	/* The gap it would drop into. */
+	.fav-list li.sortable-ghost {
+		opacity: 0.3;
 	}
 	.drag-handle {
 		cursor: grab;
 		color: var(--text-muted);
 		font-size: 1.2rem;
 		padding: 0 0.25rem;
+	}
+	/* Handles are rendered on every row so Astro's scoped CSS applies to them, but only mean
+	   anything in favList — a non-favorite has no order to drag. */
+	#restList .drag-handle {
+		display: none;
 	}
 	.muted {
 		color: var(--text-muted);
@@ -126,6 +136,8 @@ const rest = data.pieces
 </style>
 
 <script>
+	import Sortable from 'sortablejs';
+
 	const favList = document.getElementById('favList') as HTMLUListElement;
 	const restList = document.getElementById('restList') as HTMLUListElement;
 
@@ -138,15 +150,9 @@ const rest = data.pieces
 			if (!li) return;
 			if (li.parentElement === favList) {
 				li.querySelector('input[name="favorite_order"]')?.remove();
-				const handle = li.querySelector('.drag-handle');
-				handle?.remove();
 				btn.textContent = '★ Favorite';
 				restList.appendChild(li);
 			} else {
-				const handle = document.createElement('span');
-				handle.className = 'drag-handle';
-				handle.textContent = '⠿';
-				li.insertBefore(handle, li.firstChild);
 				const input = document.createElement('input');
 				input.type = 'hidden';
 				input.name = 'favorite_order';
@@ -158,35 +164,17 @@ const rest = data.pieces
 		});
 	});
 
-	// Pointer-based drag reorder within favList (works for mouse and touch alike, unlike native
-	// HTML5 drag-and-drop which iOS Safari doesn't support) — grab the handle, then on move, swap
-	// the dragged <li> with whichever sibling the pointer is currently over.
-	let dragging: HTMLLIElement | null = null;
-
-	favList.addEventListener('pointerdown', (e) => {
-		const target = e.target as HTMLElement;
-		if (!target.classList.contains('drag-handle')) return;
-		const li = target.closest('li');
-		if (!li) return;
-		dragging = li;
-		li.classList.add('dragging');
-		li.setPointerCapture(e.pointerId);
+	// Drag reorder is SortableJS, not hand-rolled: it owns the item following the cursor, the
+	// gap opening up where it would land, the grabbing cursor, and touch support (native HTML5
+	// drag-and-drop is useless here — iOS Safari doesn't implement it). It reorders the real
+	// <li>s, so the hidden `favorite_order` inputs ride along and submission order stays correct
+	// with no extra bookkeeping. Admin-only import, so the public pages ship none of it.
+	// `forceFallback` uses Sortable's own cloned drag element everywhere instead of the browser's
+	// native drag image, which is what makes the desktop cursor and the drag preview behave the
+	// same as they do on touch.
+	new Sortable(favList, {
+		handle: '.drag-handle',
+		animation: 150,
+		forceFallback: true
 	});
-
-	favList.addEventListener('pointermove', (e) => {
-		if (!dragging) return;
-		const target = document.elementFromPoint(e.clientX, e.clientY);
-		const over = target?.closest('li');
-		if (!over || over === dragging || over.parentElement !== favList) return;
-		const rect = over.getBoundingClientRect();
-		const before = e.clientY < rect.top + rect.height / 2;
-		favList.insertBefore(dragging, before ? over : over.nextSibling);
-	});
-
-	function stopDragging() {
-		dragging?.classList.remove('dragging');
-		dragging = null;
-	}
-	favList.addEventListener('pointerup', stopDragging);
-	favList.addEventListener('pointercancel', stopDragging);
 </script>

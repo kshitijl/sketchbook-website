@@ -1074,3 +1074,39 @@ plain immutable R2 files. Supersedes the `displayKey` access-copy approach from 
       — verified via typecheck/build + the server accepts its output + negative (missing-variant)
       rejection, but not by an actual in-browser upload. Test a real upload (ideally from the phone)
       before trusting new-piece uploads; if the phone can't run it, that's the cue to swap in wasm-vips.
+
+## Favorites drag-to-reorder: three hand-rolled attempts, then SortableJS (2026-07-30)
+Reported directly: reordering favorites was broken — grabbing a handle selected text instead of
+dragging, and handles on newly-added favorites looked wrong. Both were real, and fixing them took
+three rounds because the drag was hand-rolled pointer-event code.
+- [x] **Handles on newly-added favorites were unstyled** — the actual cause was Astro's scoped CSS.
+      `<style>` compiles to `.drag-handle[data-astro-cid-…]` and only template-rendered elements
+      carry that attribute, so the JS-created handle matched no rules at all. Fixed by rendering a
+      handle on *every* row and hiding it in `#restList` with CSS, so the JS never creates one —
+      which also deleted the create/remove branches from the ★/Remove toggle. General lesson worth
+      remembering: `document.createElement` opts an element out of a component's scoped styles.
+- [x] **Text selection instead of dragging.** First fix was `e.preventDefault()` on `pointerdown` —
+      **wrong**, and stated with more confidence than it deserved. That only suppresses the
+      compatibility mouse events for *touch* pointers; a mouse still fires a real `mousedown`,
+      which starts a selection. `user-select: none` is what actually stops it.
+- [x] **Then a snap-back bug, self-inflicted.** A follow-the-pointer `translateY` was added to make
+      the row feel picked up. Every `pointermove` in the *upper* half of the next row ran a no-op
+      `insertBefore` (the row was already there) but still reset the transform, pinning the row
+      back at its origin on every mousemove. Removed.
+- [x] **Then the cursor reverted to an arrow mid-drag**, because `:active` stops applying once the
+      pointer leaves the handle. At this point the owner stopped it: *"isn't this a standard widget
+      or control? why are we tryna make this ourselves."* Correct — this is the same lesson the map
+      already learned with `leaflet.markercluster` (also three attempts). Swapped in `sortablejs`
+      (1.15.7, zero dependencies, ~12KB gzipped, `handle` + `animation` + `forceFallback`):
+      **33 lines of hand-rolled JS deleted for 5 lines of config.** Admin-only import, so the
+      public pages ship none of it. See architecture.md's **Admin form conveniences** for detail.
+- [x] Verified in a real browser (Chrome, via extension), not by reasoning: mid-drag the row is
+      carried under the cursor with a placeholder gap behind it; add-a-favorite → drag it to the
+      top → Save → the server persisted the new order; hidden `favorite_order` inputs matched DOM
+      order at every step; no stray clones, classes, or text selection after release.
+- [ ] **Known, deliberately not fixed**: mid-drag the cursor is the default arrow rather than
+      `grabbing` (Sortable's clone is `pointer-events: none`, so the cursor comes from the row
+      underneath). Owner said the drag feels good as-is; the fix if it ever grates is a body class
+      toggled from `onStart`/`onEnd` with a `cursor: grabbing` rule, ~5 lines.
+- [ ] **Also not fixed**: starting from zero favorites, the server-rendered "No favorites yet — add
+      some below." line stays on screen after you add one. Cosmetic only.

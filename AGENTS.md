@@ -1,3 +1,17 @@
+## Read these before doing anything
+
+Read these in full at the start of every session, before your first edit:
+
+- `docs/architecture.md` — the design and, more importantly, the *rejected* alternatives and why.
+  Most bad suggestions in this repo are things already tried and reverted.
+- `docs/TODO.md`'s "Standing priority: simplicity over cleverness" section (top of file) — the
+  running list of complexity already flagged for removal.
+- `docs/kl-todo.md` — the owner's own short list of what's wanted next.
+
+The rest of `docs/TODO.md` is ~1,000 lines of build history, including detailed post-mortems of
+bugs already hit. Don't read it top to bottom — grep it for the area you're touching before
+changing anything there.
+
 ## Development philosophy (read this before making any change)
 
 The owner is a grug-brain developer who hates pointless complexity and code bloat. This is a

@@ -28,6 +28,13 @@ within N minutes."
   foundational dependency here).
 - **No htmx**: the one spot needing client interactivity (map → inline piece detail) uses a small
   amount of hand-written vanilla JS instead of an added dependency.
+- **Hand-write bespoke interactions; use the library for standard widgets.** These are the same
+  rule, not opposing ones — the goal is least total complexity, not fewest dependencies. The map's
+  inline detail panel is bespoke, so it's hand-written. Map clustering and favorites drag-reorder
+  are solved, standard controls, so they're `leaflet.markercluster` and `sortablejs`. Both were
+  hand-rolled first and both took three failed attempts before switching; see the Map section and
+  **Admin form conveniences** for the post-mortems. Three attempts is the signal to stop and reach
+  for the library, not to try a fourth.
 - **Auth**: Cloudflare Access, Google as the identity provider, policy locked to the owner's email.
 - **Data model**: assets (photos/scans) attach to a piece and are tagged by kind, including
   setup/environment photos (not a separate top-level entity). Every piece requires at least an
@@ -681,6 +688,34 @@ following the same rule: never clobber a value the owner already set on purpose.
   that collides with DOM's `Element` and shadows `.append()`'s normal multi-node signature. Two
   `.appendChild()` calls sidestep it; worth remembering for any other DOM-building code in this
   codebase.
+- **`/admin/favorites` drag-to-reorder, via SortableJS** (2026-07-30). Favorites used to be an
+  editable numeric rank field per row, which meant renumbering by hand. It's now drag-by-handle:
+  each favorited `<li>` carries a hidden repeated `favorite_order` input, and the browser submits
+  repeated fields in DOM order, so dragging a row *is* the edit — there's no rank to type and
+  nothing to renumber. The two lists (`#favList` / `#restList`) are the favorite/not-favorite
+  state: the ★/Remove buttons just move an `<li>` between them, adding or removing its hidden
+  input on the way.
+  - **The drag itself is `sortablejs`, not hand-rolled.** Three hand-rolled pointer-event attempts
+    each fixed one symptom and revealed the next: text selection instead of dragging (a
+    `preventDefault()` on `pointerdown` does *not* prevent this for mouse pointers — browsers only
+    suppress the compatibility mouse events for *touch* pointers, so a real `mousedown` still
+    fires and starts a selection); then a row that snapped back to its origin on every no-op
+    reinsert; then a cursor that reverted to the default arrow the moment it left the handle. The
+    library owns all of it — the element following the cursor, the gap opening where it would
+    land, and touch support. Native HTML5 drag-and-drop is not an option here: iOS Safari doesn't
+    implement it, and this list is meant to be usable from a phone. `forceFallback: true` makes
+    Sortable use its own cloned drag element on desktop too, instead of the browser's native drag
+    image, so desktop and touch behave identically. Net effect was 33 lines of hand-rolled JS
+    deleted for 5 lines of config. **This costs the public site nothing** — it's imported by one
+    admin page, and admin routes are `no-store` and single-user, so bundle size there is close to
+    irrelevant.
+  - **Astro's scoped CSS is why the handles are rendered on every row, including non-favorites**
+    (hidden via `#restList .drag-handle { display: none }`) rather than created in JS when a piece
+    is favorited. A component's `<style>` compiles to attribute selectors
+    (`.drag-handle[data-astro-cid-…]`), and only elements Astro renders from the template carry
+    that attribute — so a `document.createElement('span')` handle matched *none* of the rules and
+    came out unstyled next to its server-rendered neighbours. Worth remembering for any other
+    dynamically-built DOM in this codebase: JS-created elements silently opt out of scoped styles.
 - **"Add another piece" shortcut**: `/admin/new`'s success redirect goes to `/piece/<id>?added=1`
   instead of a bare `/piece/<id>`; `/piece/[id].astro` checks for that exact query param and only
   then shows a `← Add another piece` link back to `/admin/new` above the title, since adding one
@@ -713,7 +748,8 @@ following the same rule: never clobber a value the owner already set on purpose.
 - `/kind/<kind>` — one template, covers every asset kind (`/kind/setup`, `/kind/value-study`, ...);
   same big image-forward `piece-grid large` treatment as the home page, not a small thumbnail list.
 - `/admin` — upload form, edit-piece form, favorites reorder, bulk tagging — plain HTML forms with
-  full-page-reload submits. Favorites reordering starts as an editable numeric rank field per row.
+  full-page-reload submits. Favorites are reordered by dragging a row's handle (see **Admin form
+  conveniences**), not by typing rank numbers.
 - `/deploy-purge` — not a real page, a token-gated GET endpoint (see the Cache policy section) for
   purging the cache after a deploy from a CLI session that can't go through Cloudflare Access.
 
