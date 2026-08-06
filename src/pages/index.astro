@@ -370,7 +370,7 @@ const timelineJson = JSON.stringify({
 
 	{paintingStats.lifetimeCount > 0 && (
 		<table class="month-ranks">
-			<caption>My best months for painting — and where this one stands.</caption>
+			<caption>Top painting months</caption>
 			<thead>
 				<tr><th scope="col">#</th><th scope="col">Month</th><th scope="col">Paintings</th></tr>
 			</thead>
@@ -380,7 +380,7 @@ const timelineJson = JSON.stringify({
 					return (
 						<tr class={row.isCurrent ? 'is-current' : undefined}>
 							<td>{row.rank}</td>
-							<td>{MONTH_NAMES[m - 1]} {y}{row.isCurrent && <span class="this-month"> · this month</span>}</td>
+							<td>{MONTH_NAMES[m - 1]} {y}</td>
 							<td>{row.count}</td>
 						</tr>
 					);

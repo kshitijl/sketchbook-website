@@ -449,10 +449,11 @@ const deployedCommit = __BUILD_COMMIT__;
 				border-collapse: collapse;
 				font-size: 0.85rem;
 				color: var(--text-muted);
-				margin: 0 0 2rem;
+				/* `width: auto` + `margin: auto` — the table is only as wide as its own contents, so
+				   centering it means centering that narrow block, not stretching it across the page. */
+				margin: 0 auto 2rem;
 			}
 			.month-ranks caption {
-				text-align: left;
 				font-style: italic;
 				padding-bottom: 0.4rem;
 			}
@@ -470,7 +471,7 @@ const deployedCommit = __BUILD_COMMIT__;
 			}
 			/* The current month's row. A background tint alone would be the obvious way to mark it, but
 			   the palette is a near-white page — a tint light enough not to fight the page is too light
-			   to notice, so this leans on weight and a left bar as well, and states it in words too. */
+			   to notice on its own, so this leans on weight and a left bar as well. */
 			.month-ranks .is-current {
 				background: #fff0f6; /* faintest wash of --pink */
 				color: var(--text);
@@ -479,13 +480,6 @@ const deployedCommit = __BUILD_COMMIT__;
 			.month-ranks .is-current td:first-child {
 				box-shadow: inset 3px 0 0 var(--pink);
 				padding-left: 0.5rem;
-			}
-			.month-ranks .this-month {
-				font-family: var(--mono);
-				font-size: 0.7rem;
-				font-weight: normal;
-				color: var(--pink);
-				text-transform: uppercase;
 			}
 
 			/* Timeline activity bar chart (built server-side in index.astro): a row of year bars by
