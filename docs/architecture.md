@@ -332,6 +332,18 @@ runs `astro check && vitest run && astro build`, then `wrangler deploy`, then
 locate the purge token, curl `/deploy-purge`, wait, re-verify) after explicit feedback that a
 several-step manual dance for something this routine was exactly the kind of complexity to avoid.
 
+**The purge waits ~45s first, on purpose — don't "optimize" it away.** `wrangler deploy` returns
+before the new Worker version has reached every edge location. A request arriving in that window is
+served by the *old* code and cached, so purging immediately purges too early: it cannot clear an
+entry that doesn't exist yet, and the stale entry then lives for the full 30-day `s-maxage`. Found
+on 2026-08-06 by the failure mode it causes: a deploy added the `/month/<YYYY-MM>` route, a request
+for one of those new URLs hit an edge still running the previous version seconds after the purge,
+and that URL then served a cached **404 for a page that exists** — confirmed by
+`cf-cache-status: HIT` plus the *previous* deployment's build stamp in the 404 page's own footer.
+Note this failure is silent and self-inflicted: nothing errors, the deploy reports success, and only
+the specific URLs unlucky enough to be requested during the window are affected. `PROPAGATION_WAIT_MS`
+in `scripts/deploy-purge.mjs`.
+
 **`/deploy-purge` sets `Cache-Control: no-store` on every response it returns** — including the
 404. Without it the endpoint is cached like any other route this Worker serves, and the first
 attempt's 404 (from racing the secret rotation) gets handed straight back to all seven retries,

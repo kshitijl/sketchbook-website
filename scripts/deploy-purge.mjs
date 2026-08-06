@@ -23,6 +23,19 @@ const PURGE_URL = 'https://klauria.art/deploy-purge';
 // before the new token is recognized everywhere — 8 attempts × 5s covers that with margin.
 const MAX_ATTEMPTS = Number(process.env.PURGE_MAX_ATTEMPTS) || 8;
 const RETRY_DELAY_MS = 5000;
+/**
+ * Wait before purging, not after. `wrangler deploy` returns before the new Worker version has
+ * reached every edge location, so a request arriving in that window is served by the *old* code —
+ * and cached. Purging immediately therefore purges too early: it can't clear an entry that hasn't
+ * been created yet, and the stale entry then sits there for the full 30-day `s-maxage`.
+ *
+ * Seen live 2026-08-06, which is why this exists: a deploy added the `/month/<YYYY-MM>` route, and
+ * a request for one of those brand-new URLs landed on an edge still running the previous version
+ * moments after the purge. It got the site's 404 page, that 404 got cached, and the URL kept
+ * serving a cached 404 (`cf-cache-status: HIT`, previous deployment's build stamp in the footer)
+ * for a page that existed. Purging by hand afterwards fixed it — this makes that automatic.
+ */
+const PROPAGATION_WAIT_MS = Number(process.env.PURGE_PROPAGATION_WAIT_MS) || 45000;
 const full = process.argv.includes('--full');
 
 const token = randomBytes(24).toString('hex');
@@ -32,6 +45,9 @@ execFileSync('npx', ['wrangler', 'secret', 'put', 'DEPLOY_PURGE_TOKEN'], {
 	input: token,
 	stdio: ['pipe', 'inherit', 'inherit']
 });
+
+console.log(`Waiting ${PROPAGATION_WAIT_MS / 1000}s for the new version to reach every edge...`);
+await new Promise((resolve) => setTimeout(resolve, PROPAGATION_WAIT_MS));
 
 // Setting a secret redeploys a new Worker version — like any deploy, it can take a few seconds to
 // reach every edge location, so a purge call right after setting it may briefly still hit an

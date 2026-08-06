@@ -1418,3 +1418,17 @@ an item.
       (IMAGES, SESSION) were found by auditing generated config, not by anything breaking, and the
       SESSION fix needed three attempts because the wrong ones still pass every check — see the new
       **Bindings** section in architecture.md for the one-line command and what it should print.
+- [x] **Deploys purged too early — a new route came back as a cached 404.** Found 2026-08-06 right
+      after deploying the `/month/<YYYY-MM>` page: `/month/2026-08` returned 404 while
+      `/month/2026-06` returned 200, and the 404's body was the site's not-found page carrying the
+      *previous* deployment's build stamp, served as `cf-cache-status: HIT`. Cause:
+      `wrangler deploy` returns before the new Worker version reaches every edge, so a request in
+      that window renders from the old code and gets cached — *after* `deploy-purge.mjs` has
+      already purged. You cannot purge an entry that doesn't exist yet, and the stale one then
+      lives out the full 30-day `s-maxage`. Fix: wait `PROPAGATION_WAIT_MS` (45s) *before* purging
+      rather than purging immediately, so the purge clears anything cached during the window. Same
+      shape as the `/deploy-purge` 404-caching bug above — both are "a cache entry created at the
+      wrong moment outlives the thing that should have invalidated it". Worth knowing: this failure
+      is silent (the deploy reports success) and only hits URLs that happen to be requested during
+      the window, which is why it went unnoticed until a deploy added a brand-new route and those
+      URLs got hit immediately by a verification script.
