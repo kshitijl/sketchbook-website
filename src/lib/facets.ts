@@ -112,20 +112,6 @@ export function getTimelineNeighbors(pieces: Piece[], piece: Piece, before: numb
 	};
 }
 
-export function getPiecesByPlace(data: PiecesData): Map<string, Piece[]> {
-	const byPlace = new Map<string, Piece[]>();
-	for (const piece of getPiecesByDateDescending(data)) {
-		const place = piece.location.placeName;
-		const list = byPlace.get(place);
-		if (list) {
-			list.push(piece);
-		} else {
-			byPlace.set(place, [piece]);
-		}
-	}
-	return byPlace;
-}
-
 export interface TagFrequency {
 	tag: string;
 	count: number;

@@ -97,10 +97,26 @@ function setupDragAndDrop(): void {
 const VARIANT_SIZES = ['thumb', 'card', 'big'] as const;
 type VariantSize = (typeof VARIANT_SIZES)[number];
 
-/** Losslessly replaces a HEIC file with a PNG — used both for browser `<img>` previews (HEIC
- * can't be rendered outside Safari) and for the archival master upload itself. PNG, never a lossy
- * JPEG/WebP re-encode: this is an archival site, so converting away from HEIC is purely a format-
- * compatibility move for the rest of the system — the pixel data has to come through unchanged.
+/** What one selected file turns into on the way to the server: the master to store under `r2Key`
+ * plus the three display variants, and the true decoded pixel dimensions (used for the
+ * too-small-to-archive check below). */
+type UploadFiles = Record<VariantSize, File> & { master: File; width: number; height: number };
+
+const VARIANT_QUALITY = 0.82;
+/** The re-encoded master becomes the only copy of a HEIC photo's pixels this site keeps, so it's
+ * worth spending more bits on than the variants. Measured on a 24.5MP sample: 4.7MB at 0.9 vs
+ * 3.3MB at 0.82 — both far below the 32MB the lossless-PNG conversion used to produce. */
+const MASTER_QUALITY = 0.9;
+
+/** Dragging a photo out of macOS Photos while its original lives only in iCloud silently hands
+ * over a ~1024px preview instead of the real image — 59 masters were archived that way before it
+ * was noticed (see docs/TODO.md, 2026-07-31). Anything this small is almost certainly that, so
+ * make it fail loudly at upload rather than being discovered years later. */
+const MIN_LONG_SIDE = 1500;
+
+/** Losslessly replaces a HEIC file with a PNG, only so a browser `<img>` can preview it — HEIC
+ * can't be rendered outside Safari. **Not** the upload path: the master a HEIC upload actually
+ * stores is the full-res WebP `makeVariants()` encodes from the one decode it already does.
  * Non-HEIC files pass through untouched. */
 async function pngIfHeic(file: File): Promise<File> {
 	if (!(await isHeic(file))) return file;
@@ -121,14 +137,26 @@ async function previewUrlFor(file: File): Promise<string> {
 }
 
 /**
- * Generate the three pre-generated WebP display variants for an uploaded image, entirely in the
- * browser — the site no longer resizes on the fly, so every uploaded image must arrive with these.
- * Decodes with EXIF orientation applied, downscales each size with Pica (Lanczos, tiled so large
- * scans don't hit Safari's canvas-area limit), and encodes WebP. Returns null on any failure (the
- * server then rejects the upload rather than storing a variant-less record). Isolated here so the
- * resize/encode engine stays swappable.
+ * Turn one selected file into everything the server needs to store, entirely in the browser — the
+ * site no longer resizes on the fly, so every uploaded image must arrive with its variants already
+ * made. Decodes with EXIF orientation applied, downscales each size with Pica (Lanczos, tiled so
+ * large scans don't hit Safari's canvas-area limit), and encodes WebP. Returns null on any failure
+ * (the server then rejects the upload rather than storing a variant-less record). Isolated here so
+ * the resize/encode engine stays swappable.
+ *
+ * **The master depends on the source format.** PNG/JPEG uploads — the artwork scans this site is an
+ * archive *of* — are stored byte-for-byte, untouched. A HEIC upload can't be: nothing outside Safari
+ * can display it, so something has to re-encode it, and it's stored as a full-resolution WebP made
+ * here instead. That's an owner decision (2026-07-31) that phone photos aren't archival the way the
+ * scans are — their real originals live in iCloud — so one good lossy copy is the master, the
+ * "original", and the full-res view at once. It replaced a *lossless PNG* conversion that inflated a
+ * 4.5MB photo to 32MB while being no more original than the bytes it was made from.
+ *
+ * **One decompress, four compresses.** All four encodes read the same decoded bitmap directly. The
+ * full-res master must never be made by re-encoding a variant, or vice versa — that would be a
+ * pointless second lossy generation.
  */
-async function makeVariants(file: File): Promise<Record<VariantSize, File> | null> {
+async function makeVariants(file: File): Promise<UploadFiles | null> {
 	try {
 		// HEIC needs a WASM decode to get a bitmap at all — `createImageBitmap` can't read it in
 		// any browser but Safari. libheif applies the container's own orientation transform during
@@ -138,18 +166,31 @@ async function makeVariants(file: File): Promise<Record<VariantSize, File> | nul
 		// (phone photos are often stored landscape with a "rotate 90°" tag) so the variant pixels
 		// come out the right way up — the old Cloudflare Images binding did this automatically; a
 		// plain decode would not.
-		const bitmap = (await isHeic(file))
+		const heic = await isHeic(file);
+		const bitmap = heic
 			? await heicTo({ blob: file, type: 'bitmap' })
 			: await createImageBitmap(file, { imageOrientation: 'from-image' });
-		const out = {} as Record<VariantSize, File>;
+		const out = { width: bitmap.width, height: bitmap.height } as UploadFiles;
 		for (const size of VARIANT_SIZES) {
 			const scale = Math.min(1, SIZE_WIDTHS[size] / bitmap.width); // cap width, never enlarge
 			const canvas = document.createElement('canvas');
 			canvas.width = Math.max(1, Math.round(bitmap.width * scale));
 			canvas.height = Math.max(1, Math.round(bitmap.height * scale));
 			await pica.resize(bitmap, canvas); // Lanczos downscale into the target-sized canvas
-			const blob = await pica.toBlob(canvas, 'image/webp', 0.82);
+			const blob = await pica.toBlob(canvas, 'image/webp', VARIANT_QUALITY);
 			out[size] = new File([blob], `${size}.webp`, { type: 'image/webp' });
+		}
+		if (heic) {
+			// Full resolution, so a plain copy onto the canvas — not `pica.resize()`, which would
+			// spend Lanczos work on a 1:1 rescale. The server takes the extension from the filename.
+			const canvas = document.createElement('canvas');
+			canvas.width = bitmap.width;
+			canvas.height = bitmap.height;
+			canvas.getContext('2d')!.drawImage(bitmap, 0, 0);
+			const blob = await pica.toBlob(canvas, 'image/webp', MASTER_QUALITY);
+			out.master = new File([blob], file.name.replace(/\.hei[cf]$/i, '.webp'), { type: 'image/webp' });
+		} else {
+			out.master = file;
 		}
 		bitmap.close();
 		return out;
@@ -157,6 +198,19 @@ async function makeVariants(file: File): Promise<Record<VariantSize, File> | nul
 		console.error('Image resize failed:', err); // unsupported format, out of memory, etc.
 		return null;
 	}
+}
+
+/** Stops the submit unless the owner confirms an image small enough to be an iCloud preview rather
+ * than a real photo (see MIN_LONG_SIDE). Throwing aborts the whole submit, which is the point — the
+ * fix is to re-export the photo at full size and try again, not to get the rest of it uploaded. */
+function refuseIfTooSmall(name: string, out: UploadFiles): void {
+	if (Math.max(out.width, out.height) >= MIN_LONG_SIDE) return;
+	const ok = confirm(
+		`"${name}" is only ${out.width}×${out.height}. That usually means macOS Photos handed over ` +
+			`the small iCloud preview instead of the full photo — the original stays in iCloud, but ` +
+			`this upload would be permanently low-res.\n\nUpload it anyway?`
+	);
+	if (!ok) throw new Error(`Upload stopped — "${name}" looks like a low-res preview, not the full photo.`);
 }
 
 /**
@@ -192,23 +246,23 @@ function setupSubmitWithProgress(): void {
 			const finalFile = finalInput.files?.[0];
 			if (finalFile) {
 				log('Resizing main image…');
-				// The archival master itself must not stay HEIC either — swap in the lossless PNG
-				// conversion so nothing gets stored in a format the rest of the system can't use.
-				data.set('asset_final', await pngIfHeic(finalFile));
-				const variants = await makeVariants(finalFile);
-				if (!variants) throw new Error(`Couldn't resize the main image "${finalFile.name}" — try a JPEG or PNG.`);
-				for (const size of VARIANT_SIZES) data.set(`asset_final_${size}`, variants[size]);
+				const out = await makeVariants(finalFile);
+				if (!out) throw new Error(`Couldn't resize the main image "${finalFile.name}" — try a JPEG or PNG.`);
+				refuseIfTooSmall(finalFile.name, out);
+				data.set('asset_final', out.master);
+				for (const size of VARIANT_SIZES) data.set(`asset_final_${size}`, out[size]);
 				log('Main image resized.', 'ok');
 			}
 
 			const extras = extraInput?.files ? [...extraInput.files] : [];
-			data.delete('asset_extra'); // re-added below in the same order, HEIC ones swapped for PNG
+			data.delete('asset_extra'); // re-added below in the same order, HEIC ones swapped for WebP
 			for (let i = 0; i < extras.length; i++) {
 				log(`Resizing additional photo ${i + 1} of ${extras.length}…`);
-				data.append('asset_extra', await pngIfHeic(extras[i]));
-				const variants = await makeVariants(extras[i]);
-				if (!variants) throw new Error(`Couldn't resize additional photo ${i + 1} ("${extras[i].name}").`);
-				for (const size of VARIANT_SIZES) data.set(`asset_extra_${size}_${i}`, variants[size]);
+				const out = await makeVariants(extras[i]);
+				if (!out) throw new Error(`Couldn't resize additional photo ${i + 1} ("${extras[i].name}").`);
+				refuseIfTooSmall(extras[i].name, out);
+				data.append('asset_extra', out.master);
+				for (const size of VARIANT_SIZES) data.set(`asset_extra_${size}_${i}`, out[size]);
 				log(`Additional photo ${i + 1} resized.`, 'ok');
 			}
 

@@ -17,15 +17,24 @@ import { purgeEverything, purgePages } from '../lib/purge';
  * a change to the cache-tagging scheme itself, which needs one full flush to take effect for
  * anything cached under the old scheme).
  */
+// `no-store` on every response, same as `/admin/*`: this endpoint is served by the same Worker
+// through the same Workers Cache as everything else, and without it the cache poisons the deploy
+// script's own retry loop. Seen live 2026-08-06: attempt 1 raced the secret rotation and 404'd,
+// that 404 got cached, and all 7 retries (same URL, same token) read the cached 404 back instead
+// of ever reaching the Worker again — so the 8×5s retry budget bought nothing and the deploy
+// reported a purge failure that had already fixed itself. Confirmed by curling one bad-token URL
+// three times: `cf-cache-status: MISS`, then `HIT`, then `HIT`.
+const NO_STORE = { 'Cache-Control': 'no-store' };
+
 export const GET: APIRoute = async ({ url }) => {
 	const token = url.searchParams.get('token');
 	if (!env.DEPLOY_PURGE_TOKEN || token !== env.DEPLOY_PURGE_TOKEN) {
-		return new Response('Not found', { status: 404 });
+		return new Response('Not found', { status: 404, headers: NO_STORE });
 	}
 	if (url.searchParams.get('full') === '1') {
 		await purgeEverything();
-		return new Response('purged everything');
+		return new Response('purged everything', { headers: NO_STORE });
 	}
 	await purgePages();
-	return new Response('purged');
+	return new Response('purged', { headers: NO_STORE });
 };

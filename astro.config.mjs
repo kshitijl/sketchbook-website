@@ -20,6 +20,10 @@ export default defineConfig({
   // <img> pointing at a pre-generated R2 variant (see docs/architecture.md's Images section), and
   // the only bundled image imports (Leaflet's marker PNGs) use `?url` to skip the pipeline too.
   adapter: cloudflare({ imageService: 'passthrough' }),
+  // Nothing here uses Astro.session, but the adapter force-enables KV-backed sessions unless a
+  // driver is set, injecting a SESSION KV namespace binding nothing reads. Any non-KV driver stops
+  // that; 'memory' is the least of them.
+  session: { driver: 'memory' },
   vite: {
     define: {
       __BUILD_COMMIT__: JSON.stringify(buildCommit),

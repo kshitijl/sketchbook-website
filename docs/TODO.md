@@ -1216,7 +1216,8 @@ small-image warning in the same change — it lives in the same submit flow in `
 ten lines against `pieces.json`. (5) The rclone backup script — independent of the others, can
 happen anytime. As always: deploys only via `npm run deploy`, never the steps by hand.
 
-- [ ] **Re-encode HEIC uploads to one high-quality full-res WebP and store *that* as the
+- [x] **Code done 2026-08-06, awaiting the one real-upload verification below. Re-encode HEIC
+      uploads to one high-quality full-res WebP and store *that* as the
       master.** (Owner decision 2026-07-31, superseding two earlier drafts of this entry — see
       the rejected-alternatives bullet.) The reasoning: this site is an archive of the *artwork* —
       the high-quality PNG scans, which are uploaded as PNG and stored byte-for-byte, stay exactly
@@ -1279,7 +1280,25 @@ happen anytime. As always: deploys only via `npm run deploy`, never the steps by
         extension. Either way this fix covers the HEIC case whenever it occurs, and all PNG
         masters are artwork scans that stay untouched. (This investigation also surfaced the
         low-res-preview problem — see the dedicated item below.)
-- [ ] **Remove the unused SESSION KV binding** — same class as the removed IMAGES binding.
+      - **As built (2026-08-06):** `makeVariants()` in `pieceForm.ts` now returns
+        `{ master, thumb, card, big, width, height }` instead of just the three variants — the
+        master is the original `File` untouched for PNG/JPEG, and the full-res q0.9 WebP for HEIC,
+        encoded from the same bitmap the variants come from (`drawImage` at 1:1, not
+        `pica.resize()`, which would spend Lanczos work on a no-op rescale). The submit flow posts
+        `out.master` as `asset_final`/`asset_extra`. **Net effect is less code, not more**: the
+        old flow called `pngIfHeic(file)` *and* `makeVariants(file)` on every upload, decoding
+        each HEIC twice; now it's one decode. `pngIfHeic()` survives for the `<img>` preview only.
+        No server change at all — it already derives the extension from the filename and the
+        content type from the `File`. Accepted regression, exactly as predicted in this item:
+        `getImageDimensions()` doesn't parse WebP, so a HEIC master records `0,0`. Left alone
+        rather than plumbing the client's dimensions through — nothing in production has a WebP
+        master today, and the `0,0` fallback already exists for that reason.
+      - **Verified so far:** `astro check` 0 errors / 47 files, 58 tests. **Still needs the real
+        drag-and-drop upload of `IMG_5782.HEIC` in desktop Firefox** — the ~24.5MP destination
+        canvas is the one thing local checks can't prove, and if it fails, the fix is capping the
+        master's width at ~4000px. `?added=1`'s original row should read `image/webp` at ~4-5MB.
+- [x] **Done 2026-08-06. Remove the unused SESSION KV binding** — same class as the removed IMAGES
+      binding.
       Nothing uses `Astro.session`, but `@astrojs/cloudflare` force-enables KV-backed sessions
       whenever astro.config has no `session.driver` (checked in the adapter source), emitting
       `"kv_namespaces": [{"binding": "SESSION"}]` into the generated deploy config and
@@ -1289,6 +1308,10 @@ happen anytime. As always: deploys only via `npm run deploy`, never the steps by
       used), verify by diffing `dist/server/wrangler.json` that `kv_namespaces` is gone (same
       verification as the IMAGES removal), deploy, then
       `npx wrangler kv namespace delete --namespace-id 6c3df735f300479e8deddfc2216daa9a`.
+      Done exactly that: `session: { driver: 'memory' }` in `astro.config.mjs`, and the
+      `dist/server/wrangler.json` diff across a rebuild went from
+      `"kv_namespaces":[{"binding":"SESSION"}]` to `"kv_namespaces":[]`, with both R2 buckets still
+      present. Deployed, then the namespace deleted.
 - [ ] **59 phone-photo masters are ~1024×768 previews, not real photos — the iCloud
       "Optimize Mac Storage" drag gotcha.** Found 2026-07-31 while investigating the HEIC/JPEG
       question: of the 158 phone-photo masters, 43 are 1024×768 and 16 are 768×1024 (~20% of all
@@ -1306,11 +1329,15 @@ happen anytime. As always: deploys only via `npm run deploy`, never the steps by
         submit time and knows its true pixel size — make the submit flow warn (or block behind a
         confirm) when a photo is under ~1500px on its long side, so the degraded-preview case
         fails loudly at upload instead of silently archiving a thumbnail. Fits the existing
-        fail-loud philosophy.
+        fail-loud philosophy. **Done 2026-08-06**, shipped with the HEIC change since it lives in
+        the same submit flow: `refuseIfTooSmall()` blocks behind a `confirm()` naming the actual
+        dimensions, and declining throws, which aborts the *whole* submit — the fix is to
+        re-export the photo at full size, not to get the rest of the piece uploaded around it.
+        The remaining open part of this item is only the re-upload of the existing 59.
       - Workflow note meanwhile: before dragging from Photos, make sure the photo is fully
         downloaded (open it and let it sharpen / no low-res indicator), or use
         File → Export → Unmodified Originals.
-- [ ] **Delete the dead code the review found.** `getPiecesByPlace()` in `src/lib/facets.ts` has
+- [x] **Done 2026-08-06. Delete the dead code the review found.** `getPiecesByPlace()` in `src/lib/facets.ts` has
       no callers (drop its tests with it), and `scripts/backfill-image-variants.mjs` +
       `scripts/reorient-image-variants.mjs` are completed one-time migrations — git history keeps
       them if ever needed again. Caveat before deleting the backfill script: the restore runbook
@@ -1318,6 +1345,26 @@ happen anytime. As always: deploys only via `npm run deploy`, never the steps by
       variant, so either keep it for that or update the runbook to say "check it out from git
       history" when deleting. (`scripts/check-caching.mjs` and `scripts/deploy-purge.mjs` are
       *not* dead — the former is the post-upgrade cache canary, the latter runs on every deploy.)
+      All three deleted, plus the one `getPiecesByPlace` test (59 → 58 tests, `astro check` 0
+      errors over 47 files). Took the "update the runbook" side of the caveat: architecture.md's
+      restore step 5 now says to check the backfill script out of git history, and its Backfill
+      paragraph records that both scripts are gone but their lessons (EXIF orientation, sharp's
+      filename-keyed metadata cache) still apply.
+- [x] **Done 2026-08-06 (found while deploying the two items above, not planned).
+      `/deploy-purge`'s own responses were cacheable, which poisoned the deploy script's retry
+      loop.** `npm run deploy` reported `Purge failed after 8 attempts: 404 Not found`, yet
+      re-running `node scripts/deploy-purge.mjs` by hand immediately after succeeded on the first
+      try. Cause: attempt 1 raced the secret rotation and got the intended 404, but that 404
+      carried no `Cache-Control`, so Workers Cache stored it — and every retry uses the *same* URL
+      (same freshly-generated token), so attempts 2-8 were served the cached 404 and never reached
+      the Worker again. The 8×5s budget the retry loop was widened to (2026-07-23) bought exactly
+      nothing in the one situation it exists for. The by-hand rerun only worked because it
+      generates a new token, i.e. a different URL, i.e. a cache miss. Confirmed directly, not
+      assumed: curling one bad-token URL three times returned `cf-cache-status: MISS`, `HIT`,
+      `HIT`. Fix: `Cache-Control: no-store` on all three of `/deploy-purge`'s responses, the same
+      treatment `/admin/*` already gets. **General lesson worth remembering: every route this
+      Worker serves is cached by default unless it opts out** — a route whose whole job is a side
+      effect must say `no-store`, or it will eventually be "called" without running.
 - [ ] **Off-Cloudflare backup: a small rclone pull of the backup bucket.** Both buckets, the
       auth, and the domain live in one Cloudflare account — an account takeover/suspension loses
       the backups too. The collection is already irreplaceable-sized (2.8 GB), so stop deferring.

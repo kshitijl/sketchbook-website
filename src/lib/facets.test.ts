@@ -8,7 +8,6 @@ import {
 	getAssetsByKind,
 	getPiecesByDateDescending,
 	getRandomPieces,
-	getPiecesByPlace,
 	getTagFrequency,
 	isPainting,
 	getPaintingStats,
@@ -169,17 +168,6 @@ describe('getRandomPieces', () => {
 		const copy = [...pieces];
 		getRandomPieces(pieces, 3);
 		expect(pieces).toEqual(copy);
-	});
-});
-
-describe('getPiecesByPlace', () => {
-	it('groups pieces by location.placeName', () => {
-		const a = makePiece({ id: 'a', location: { lat: 0, lng: 0, placeName: 'Jaipur' } });
-		const b = makePiece({ id: 'b', location: { lat: 0, lng: 0, placeName: 'Providence' } });
-		const c = makePiece({ id: 'c', location: { lat: 0, lng: 0, placeName: 'Jaipur' } });
-		const byPlace = getPiecesByPlace(makeData([a, b, c]));
-		expect([...byPlace.keys()]).toEqual(['Jaipur', 'Providence']);
-		expect(byPlace.get('Jaipur')?.map((p) => p.id)).toEqual(['a', 'c']);
 	});
 });
 

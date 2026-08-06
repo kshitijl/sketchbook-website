@@ -24,3 +24,7 @@ pnpm-debug.log*
 
 # jetbrains setting folder
 .idea/
+
+# The HEIC upload test file kept in the repo root for verifying the phone-photo path
+*.HEIC
+*.heic
