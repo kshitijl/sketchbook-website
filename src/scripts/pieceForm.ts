@@ -102,6 +102,18 @@ type VariantSize = (typeof VARIANT_SIZES)[number];
  * too-small-to-archive check below). */
 type UploadFiles = Record<VariantSize, File> & { master: File; width: number; height: number };
 
+/** The submit log's line printer (see `setupSubmitWithProgress`), passed down so the encode step
+ * can narrate itself. The log is deliberately specific about formats, dimensions, quality settings
+ * and byte counts — the only person who ever sees this screen is the technical owner, and knowing
+ * what the browser actually did is what makes an odd result (a suspiciously small master, a photo
+ * that decoded to the wrong dimensions) noticeable at upload time instead of months later. */
+type Log = (msg: string, kind?: 'info' | 'ok' | 'error') => void;
+
+function fmtBytes(n: number): string {
+	if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+	return `${Math.round(n / 1024)} KB`;
+}
+
 const VARIANT_QUALITY = 0.82;
 /** The re-encoded master becomes the only copy of a HEIC photo's pixels this site keeps, so it's
  * worth spending more bits on than the variants. Measured on a 24.5MP sample: 4.7MB at 0.9 vs
@@ -156,7 +168,8 @@ async function previewUrlFor(file: File): Promise<string> {
  * full-res master must never be made by re-encoding a variant, or vice versa — that would be a
  * pointless second lossy generation.
  */
-async function makeVariants(file: File): Promise<UploadFiles | null> {
+async function makeVariants(file: File, log: Log): Promise<UploadFiles | null> {
+	const startedAt = performance.now();
 	try {
 		// HEIC needs a WASM decode to get a bitmap at all — `createImageBitmap` can't read it in
 		// any browser but Safari. libheif applies the container's own orientation transform during
@@ -167,9 +180,18 @@ async function makeVariants(file: File): Promise<UploadFiles | null> {
 		// come out the right way up — the old Cloudflare Images binding did this automatically; a
 		// plain decode would not.
 		const heic = await isHeic(file);
+		log(`${file.name} — ${file.type || 'unknown type'}, ${fmtBytes(file.size)}`);
+		log(
+			heic
+				? 'Decoding HEIC with heic-to (libheif/WASM) — orientation applied by the decoder…'
+				: `Decoding ${file.type || 'file'} with createImageBitmap, EXIF orientation applied…`
+		);
 		const bitmap = heic
 			? await heicTo({ blob: file, type: 'bitmap' })
 			: await createImageBitmap(file, { imageOrientation: 'from-image' });
+		const megapixels = (bitmap.width * bitmap.height) / 1e6;
+		log(`Decoded ${bitmap.width}×${bitmap.height} (${megapixels.toFixed(1)} MP).`);
+
 		const out = { width: bitmap.width, height: bitmap.height } as UploadFiles;
 		for (const size of VARIANT_SIZES) {
 			const scale = Math.min(1, SIZE_WIDTHS[size] / bitmap.width); // cap width, never enlarge
@@ -179,23 +201,31 @@ async function makeVariants(file: File): Promise<UploadFiles | null> {
 			await pica.resize(bitmap, canvas); // Lanczos downscale into the target-sized canvas
 			const blob = await pica.toBlob(canvas, 'image/webp', VARIANT_QUALITY);
 			out[size] = new File([blob], `${size}.webp`, { type: 'image/webp' });
+			log(`· ${size}: Pica/Lanczos → ${canvas.width}×${canvas.height} WebP q${VARIANT_QUALITY} — ${fmtBytes(blob.size)}`);
 		}
+
 		if (heic) {
 			// Full resolution, so a plain copy onto the canvas — not `pica.resize()`, which would
 			// spend Lanczos work on a 1:1 rescale. The server takes the extension from the filename.
+			log(`Re-encoding the HEIC master → full-res WebP q${MASTER_QUALITY} at ${bitmap.width}×${bitmap.height}…`);
 			const canvas = document.createElement('canvas');
 			canvas.width = bitmap.width;
 			canvas.height = bitmap.height;
 			canvas.getContext('2d')!.drawImage(bitmap, 0, 0);
 			const blob = await pica.toBlob(canvas, 'image/webp', MASTER_QUALITY);
 			out.master = new File([blob], file.name.replace(/\.hei[cf]$/i, '.webp'), { type: 'image/webp' });
+			log(`· master: ${fmtBytes(blob.size)} WebP, from ${fmtBytes(file.size)} of HEIC. This replaces the HEIC — it's the only copy kept.`);
 		} else {
 			out.master = file;
+			log(`· master: ${file.type || 'unknown type'} kept byte-for-byte, ${fmtBytes(file.size)} — not re-encoded.`);
 		}
 		bitmap.close();
+		log(`Done in ${((performance.now() - startedAt) / 1000).toFixed(1)}s.`, 'ok');
 		return out;
 	} catch (err) {
-		console.error('Image resize failed:', err); // unsupported format, out of memory, etc.
+		// unsupported format, out of memory, canvas too large, …
+		console.error('Image resize failed:', err);
+		log(`Decode/encode failed after ${((performance.now() - startedAt) / 1000).toFixed(1)}s: ${String(err)}`, 'error');
 		return null;
 	}
 }
@@ -214,11 +244,16 @@ function refuseIfTooSmall(name: string, out: UploadFiles): void {
 }
 
 /**
- * Intercepts the piece form's submit to (1) show per-step feedback — resizing each image, then
- * uploading — and (2) surface every failure as a visible message instead of dumping to a blank
- * error page. Generates the WebP variants at submit time and posts everything (fields, master files,
- * and the generated variants) via fetch. Shared by the new-piece and edit-piece forms; the separate
+ * Intercepts the piece form's submit to (1) narrate what the browser is actually doing to each
+ * image and (2) surface every failure as a visible message instead of dumping to a blank error
+ * page. Generates the WebP variants at submit time and posts everything (fields, master files, and
+ * the generated variants) via fetch. Shared by the new-piece and edit-piece forms; the separate
  * delete-piece form isn't touched (this only binds the form containing the image inputs).
+ *
+ * **The log is deliberately explicit and technical** — formats, dimensions, quality settings, byte
+ * counts, timings, HTTP status. Owner directive (2026-08-06): the only person who ever sees this
+ * screen is the site's technical owner, and the point is to notice something weird *while it's
+ * happening*. Keep any new step in this flow logged at the same level of detail.
  */
 function setupSubmitWithProgress(): void {
 	const finalInput = document.getElementById('finalImageInput') as HTMLInputElement | null;
@@ -245,30 +280,43 @@ function setupSubmitWithProgress(): void {
 
 			const finalFile = finalInput.files?.[0];
 			if (finalFile) {
-				log('Resizing main image…');
-				const out = await makeVariants(finalFile);
+				log('[main image]');
+				const out = await makeVariants(finalFile, log);
 				if (!out) throw new Error(`Couldn't resize the main image "${finalFile.name}" — try a JPEG or PNG.`);
 				refuseIfTooSmall(finalFile.name, out);
 				data.set('asset_final', out.master);
 				for (const size of VARIANT_SIZES) data.set(`asset_final_${size}`, out[size]);
-				log('Main image resized.', 'ok');
 			}
 
 			const extras = extraInput?.files ? [...extraInput.files] : [];
 			data.delete('asset_extra'); // re-added below in the same order, HEIC ones swapped for WebP
 			for (let i = 0; i < extras.length; i++) {
-				log(`Resizing additional photo ${i + 1} of ${extras.length}…`);
-				const out = await makeVariants(extras[i]);
+				log(`[additional photo ${i + 1} of ${extras.length}]`);
+				const out = await makeVariants(extras[i], log);
 				if (!out) throw new Error(`Couldn't resize additional photo ${i + 1} ("${extras[i].name}").`);
 				refuseIfTooSmall(extras[i].name, out);
 				data.append('asset_extra', out.master);
 				for (const size of VARIANT_SIZES) data.set(`asset_extra_${size}_${i}`, out[size]);
-				log(`Additional photo ${i + 1} resized.`, 'ok');
 			}
 
-			log('Uploading…');
+			// Counted off the FormData itself rather than tallied along the way — it's what actually
+			// goes over the wire, including the master inputs the browser put there.
+			let fileCount = 0;
+			let byteCount = 0;
+			for (const [, value] of data) {
+				if (value instanceof File && value.size > 0) {
+					fileCount++;
+					byteCount += value.size;
+				}
+			}
+			log(`POST ${form.action} — ${fileCount} files, ${fmtBytes(byteCount)}…`);
+			const uploadStartedAt = performance.now();
 			const res = await fetch(form.action, { method: 'POST', body: data });
+			// `fetch` follows the success redirect itself, so `res.status` is the 200 from the page it
+			// landed on, not the 302 — hence reporting the redirect separately rather than as a status.
+			log(`HTTP ${res.status} in ${((performance.now() - uploadStartedAt) / 1000).toFixed(1)}s.`);
 			if (res.redirected) {
+				log(`Saved. Redirected to ${res.url}`, 'ok');
 				window.location.assign(res.url); // success -> /piece/<id>?added=1
 				return;
 			}

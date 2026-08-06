@@ -1,6 +1,6 @@
 // @ts-check
 import { execSync } from 'node:child_process';
-import { defineConfig } from 'astro/config';
+import { defineConfig, sessionDrivers } from 'astro/config';
 
 import cloudflare from '@astrojs/cloudflare';
 
@@ -21,9 +21,14 @@ export default defineConfig({
   // the only bundled image imports (Leaflet's marker PNGs) use `?url` to skip the pipeline too.
   adapter: cloudflare({ imageService: 'passthrough' }),
   // Nothing here uses Astro.session, but the adapter force-enables KV-backed sessions unless a
-  // driver is set, injecting a SESSION KV namespace binding nothing reads. Any non-KV driver stops
-  // that; 'memory' is the least of them.
-  session: { driver: 'memory' },
+  // driver is set, injecting a SESSION KV namespace binding nothing reads. The `null` driver is the
+  // one that says what's true — sessions go nowhere because nothing uses them — and it's the only
+  // choice that adds no code to the Worker: every real driver gets bundled into it, so asking for
+  // `lruCache` here would ship 25KB of LRU cache to store sessions that are never written.
+  // @ts-expect-error `null` and `memory` exist in `sessionDrivers` at runtime but are missing from
+  // Astro 7.1.3's .d.ts (only drivers taking an options type are declared). The alternative — the
+  // plain `driver: 'memory'` string — is deprecated and warns on every build.
+  session: { driver: sessionDrivers.null() },
   vite: {
     define: {
       __BUILD_COMMIT__: JSON.stringify(buildCommit),

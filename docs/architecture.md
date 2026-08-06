@@ -463,13 +463,38 @@ generates the three WebPs client-side. `setupSubmitWithProgress()` intercepts th
 for each selected image it runs `makeVariants()` (decode via `createImageBitmap(file,
 {imageOrientation: 'from-image'})`, or heic-to's WASM decode for HEIC — see below), appends the
 variants to the `FormData` as `asset_<final|extra>_<size>[_i]` fields, and posts everything via
-`fetch`, logging per-step progress ("Resizing main image… / Uploading…") and surfacing every
-failure as a visible message instead of a blank error page. The server (`admin/new.astro` +
+`fetch`, logging progress and surfacing every failure as a visible message instead of a blank error
+page. The server (`admin/new.astro` +
 `admin/edit/[id].astro`, shared `uploadAsset`, via `getVariantFiles()`) refuses to create an asset
 unless all three variant files are present — so a variant-less record is never written. (An
 earlier version generated variants at file-*selection* time into hidden inputs via `DataTransfer`
 with a ref-counted disabled Save button; the submit-time flow replaced that — one code path, plus
 visible progress/errors.)
+
+**That log is deliberately explicit and technical** (owner directive, 2026-08-06) — source format
+and size, which decoder ran, decoded dimensions and megapixels, every variant's output dimensions
+/ quality / byte size, what the master became and why, elapsed time per image, then the POST's file
+count, total bytes, HTTP status and duration. The only person who ever sees this screen is the
+site's technical owner, so the useful default is *more* detail, not friendlier summaries: the point
+is to notice something odd (a master that came out suspiciously small, a photo that decoded to
+unexpected dimensions, a step that suddenly takes 30s) while it's happening rather than months
+later. Anything added to this flow should be logged at the same level of detail:
+
+```
+[main image]
+IMG_5782.HEIC — image/heic, 4.5 MB
+Decoding HEIC with heic-to (libheif/WASM) — orientation applied by the decoder…
+Decoded 5712×4284 (24.5 MP).
+· thumb: Pica/Lanczos → 240×180 WebP q0.82 — 9 KB
+· card: Pica/Lanczos → 1000×750 WebP q0.82 — 105 KB
+· big: Pica/Lanczos → 1800×1350 WebP q0.82 — 330 KB
+Re-encoding the HEIC master → full-res WebP q0.9 at 5712×4284…
+· master: 4.7 MB WebP, from 4.5 MB of HEIC. This replaces the HEIC — it's the only copy kept.
+✓ Done in 6.2s.
+POST /admin/new — 4 files, 5.1 MB…
+HTTP 200 in 3.4s.
+✓ Saved. Redirected to https://klauria.art/piece/2026-08-06-…?added=1
+```
 
 `makeVariants()` is deliberately isolated behind that one function so the resize/encode engine is
 swappable. It uses **Pica** (Lanczos downscale — sharper than a plain canvas draw — tiled

@@ -1308,10 +1308,21 @@ happen anytime. As always: deploys only via `npm run deploy`, never the steps by
       used), verify by diffing `dist/server/wrangler.json` that `kv_namespaces` is gone (same
       verification as the IMAGES removal), deploy, then
       `npx wrangler kv namespace delete --namespace-id 6c3df735f300479e8deddfc2216daa9a`.
-      Done exactly that: `session: { driver: 'memory' }` in `astro.config.mjs`, and the
-      `dist/server/wrangler.json` diff across a rebuild went from
+      Done exactly that, and the `dist/server/wrangler.json` diff across a rebuild went from
       `"kv_namespaces":[{"binding":"SESSION"}]` to `"kv_namespaces":[]`, with both R2 buckets still
       present. Deployed, then the namespace deleted.
+      - **Which driver you name is not cosmetic — it gets bundled into the Worker.** Took three
+        tries to land on the right one, worth recording since the first two look equally valid:
+        `driver: 'memory'` (the plain string) works but is a deprecated signature in Astro 7.1.3
+        and prints a warning on every single build. `sessionDrivers.lruCache()` is typed and
+        warning-free — and ships a **25KB chunk of the real `lru-cache` library** into the Worker
+        to hold sessions that are never written. `sessionDrivers.null()` is the honest one and
+        emits a 783-byte stub instead (worker bundle 816K → 792K, no `lru-cache` anywhere in it).
+        Its one catch: `null` and `memory` exist in `sessionDrivers` at runtime but are missing
+        from the `.d.ts` — only drivers that take an options type are declared — so it needs a
+        `@ts-expect-error`, which is why the two worse options got tried first. Verified in
+        production, not just at build time: Worker startup 8ms, `/` 200, `/admin` 302, bad piece
+        404.
 - [ ] **59 phone-photo masters are ~1024×768 previews, not real photos — the iCloud
       "Optimize Mac Storage" drag gotcha.** Found 2026-07-31 while investigating the HEIC/JPEG
       question: of the 158 phone-photo masters, 43 are 1024×768 and 16 are 768×1024 (~20% of all
