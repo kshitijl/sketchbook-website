@@ -11,6 +11,7 @@ import {
 	getTagFrequency,
 	isPainting,
 	getPaintingStats,
+	getPaintingsInMonth,
 	getTopPaintingMonths,
 	distanceMiles,
 	getNearbyPieces,
@@ -284,6 +285,18 @@ describe('getPaintingStats', () => {
 		expect(stats.yearCount).toBe(100);
 		expect(stats.nextYearMilestone).toBe(200);
 		expect(stats.remainingForYearMilestone).toBe(100);
+	});
+});
+
+describe('getPaintingsInMonth', () => {
+	it('returns only that month\'s paintings, newest first', () => {
+		const data = makeData([
+			makePiece({ id: 'early', date: '2026-06-02', tags: ['painting'] }),
+			makePiece({ id: 'late', date: '2026-06-20', tags: ['painting'] }),
+			makePiece({ id: 'sketch', date: '2026-06-10', tags: ['pencil'] }),
+			makePiece({ id: 'next-month', date: '2026-07-01', tags: ['painting'] })
+		]);
+		expect(getPaintingsInMonth(data, '2026-06').map((p) => p.id)).toEqual(['late', 'early']);
 	});
 });
 

@@ -158,6 +158,25 @@ export function getPaintingStats(data: PiecesData, now: Date): PaintingStats {
 	return { lifetimeCount, year, yearCount, nextYearMilestone, remainingForYearMilestone };
 }
 
+export const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+	'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** '2026-06' → 'June 2026'. Shared by the home page's timeline/top-months and `/month/<month>`, so
+ * the same month never gets spelled two different ways depending on where you're looking. */
+export function monthLabel(month: string): string {
+	const [year, m] = month.split('-');
+	return `${MONTH_NAMES[Number(m) - 1]} ${year}`;
+}
+
+/** Every painting made in a 'YYYY-MM' month, newest first — the `/month/<month>` page behind each
+ * row of the home page's top-months table. Paintings only, not every piece, so the page's contents
+ * match the count in the table that linked to it. */
+export function getPaintingsInMonth(data: PiecesData, month: string): Piece[] {
+	return data.pieces
+		.filter((piece) => isPainting(piece) && piece.date.startsWith(`${month}-`))
+		.sort((a, b) => compareDatesDescending(a.date, b.date));
+}
+
 export interface PaintingMonth {
 	month: string; // 'YYYY-MM'
 	count: number;

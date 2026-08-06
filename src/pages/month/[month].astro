@@ -1,0 +1,41 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../layouts/Base.astro';
+import PieceList from '../../components/PieceList.astro';
+import { getPieces } from '../../lib/data';
+import { getPaintingsInMonth, monthLabel } from '../../lib/facets';
+import { setPageCacheHeaders } from '../../lib/cache';
+
+setPageCacheHeaders(Astro.response.headers);
+
+// Every row of the home page's top-months table links here. Paintings only (tagged `painting`),
+// matching what that table counts — a month page showing every sketch too would disagree with the
+// number you clicked on.
+const { month } = Astro.params;
+const isValidMonth = (m: string | undefined): m is string => !!m && /^\d{4}-(0[1-9]|1[0-2])$/.test(m);
+
+if (!isValidMonth(month)) {
+	Astro.response.status = 404;
+}
+
+const { data } = await getPieces(env.ART_BUCKET);
+const paintings = isValidMonth(month) ? getPaintingsInMonth(data, month) : [];
+---
+
+<Base title={isValidMonth(month) ? monthLabel(month) : 'Not found'}>
+	{isValidMonth(month) ? (
+		<>
+			<h1>{monthLabel(month)}</h1>
+			{paintings.length === 0 ? (
+				<p><em>No paintings from {monthLabel(month)}.</em></p>
+			) : (
+				<>
+					<p><em>{paintings.length} painting{paintings.length === 1 ? '' : 's'}</em></p>
+					<PieceList pieces={paintings} large />
+				</>
+			)}
+		</>
+	) : (
+		<p>Not a month — expected YYYY-MM.</p>
+	)}
+</Base>

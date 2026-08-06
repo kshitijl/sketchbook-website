@@ -3,7 +3,7 @@ import { env } from 'cloudflare:workers';
 import Base from '../layouts/Base.astro';
 import Carousel from '../components/Carousel.astro';
 import { getPieces } from '../lib/data';
-import { getPaintingStats, getPiecesByDateDescending, getPrimaryAsset, getRandomPieces, getTagFrequency, getTopPaintingMonths } from '../lib/facets';
+import { getPaintingStats, getPiecesByDateDescending, getPrimaryAsset, getRandomPieces, getTagFrequency, getTopPaintingMonths, MONTH_NAMES, monthLabel } from '../lib/facets';
 import { imageUrl } from '../lib/images';
 import { setPageCacheHeaders } from '../lib/cache';
 import { categoryForTag, TAG_CATEGORIES } from '../lib/tagCategories';
@@ -62,8 +62,6 @@ const piecesJson = JSON.stringify(data.pieces).replace(/</g, '\\u003c');
 // bounded — this grows by one a year) keeps every bar comfortably tappable; clicking a year drills
 // into its own row of at most 12 month bars, also always comfortably wide. setupTimelineChart
 // wires up both the drill-down and the month-click piece display.
-const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
-	'July', 'August', 'September', 'October', 'November', 'December'];
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // Every "YYYY-MM" from start to end inclusive, so the x-axis is continuous in time.
@@ -375,16 +373,13 @@ const timelineJson = JSON.stringify({
 				<tr><th scope="col">#</th><th scope="col">Month</th><th scope="col">Paintings</th></tr>
 			</thead>
 			<tbody>
-				{topPaintingMonths.map((row) => {
-					const [y, m] = row.month.split('-').map(Number);
-					return (
-						<tr class={row.isCurrent ? 'is-current' : undefined}>
-							<td>{row.rank}</td>
-							<td>{MONTH_NAMES[m - 1]} {y}</td>
-							<td>{row.count}</td>
-						</tr>
-					);
-				})}
+				{topPaintingMonths.map((row) => (
+					<tr class={row.isCurrent ? 'is-current' : undefined}>
+						<td>{row.rank}</td>
+						<td><a href={`/month/${row.month}`}>{monthLabel(row.month)}</a></td>
+						<td>{row.count}</td>
+					</tr>
+				))}
 			</tbody>
 		</table>
 	)}
