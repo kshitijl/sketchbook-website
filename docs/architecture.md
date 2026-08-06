@@ -77,6 +77,39 @@ scrubber (see their own sections below).
    generally enough to make every later request everywhere a hit, without waiting for that specific
    data center to see its own first visitor.
 
+## Bindings: exactly two R2 buckets, and why that needs guarding
+
+The deployed Worker's complete binding list is `ART_BUCKET` and `BACKUP_BUCKET`. Nothing else —
+no KV, no Images, no D1, no queues.
+
+Keeping it that way takes active effort, because **`@astrojs/cloudflare` enables features by
+default and provisions real Cloudflare resources for them**, whether or not the site uses them.
+That's happened twice, both found by audit rather than by anything breaking:
+
+- **`IMAGES`** (removed 2026-07-30) — the adapter wires up Cloudflare Images unless told not to.
+  Fixed with `imageService: 'passthrough'`; see the Images section.
+- **`SESSION`** (removed 2026-08-06) — the adapter force-enables KV-backed sessions unless
+  `session.driver` is set, and had auto-created a real KV namespace (`31-art-website-session`) that
+  nothing ever read; `Astro.session` appears nowhere in this codebase. Fixed with
+  `session: { driver: sessionDrivers.null() }`. **The driver you name gets bundled into the
+  Worker**, so this is not a free-form choice: `lruCache()` was tried first and shipped 25KB of a
+  real LRU cache library to store sessions that are never written, where `null` emits a 783-byte
+  stub. `null` and `memory` exist at runtime but are missing from Astro 7.1.3's `.d.ts` (only
+  drivers taking an options type are declared), hence the one `@ts-expect-error` in
+  `astro.config.mjs`. The plain `driver: 'memory'` string works but is a deprecated signature that
+  warns on every build.
+
+**The check, worth re-running after any adapter or Astro upgrade** — an inert binding costs nothing
+at runtime, but it's a live Cloudflare resource nobody is watching, and it's exactly the unrequested
+machinery this repo strips:
+
+```
+npx astro build && grep -o '"kv_namespaces":[^]]*]\|"r2_buckets":[^]]*]\|"images":[^}]*}' dist/server/wrangler.json
+```
+
+Expected: `"kv_namespaces":[]`, the two R2 buckets, no `images` key. Deploy *before* deleting any
+namespace the check turns up — never the other way around.
+
 ## Metadata storage: one JSON document in R2
 
 A single object, `data/pieces.json`, holding:
@@ -455,7 +488,9 @@ Safe because nothing here uses `astro:assets` at all: every image is a plain `<i
 pre-generated R2 variant, and the only bundled image imports (Leaflet's marker PNGs in
 `src/scripts/leafletIcons.ts`) already use `?url` to bypass the pipeline. Verified by diffing
 `dist/server/wrangler.json` before and after — the `images` key is gone, `ART_BUCKET`,
-`BACKUP_BUCKET` and the `SESSION` KV namespace all still present.
+`BACKUP_BUCKET` and the `SESSION` KV namespace all still present. (The `SESSION` binding was
+itself removed the same way on 2026-08-06 — see **Bindings** below. The Worker's bindings are now
+exactly the two R2 buckets.)
 
 **Generation happens at upload, in the browser, at submit time.** The Worker can't resize a
 20–30MB scan (Workers memory + no image lib we want to ship there), so `src/scripts/pieceForm.ts`
@@ -788,6 +823,14 @@ correcting once:
   A current month with nothing painted yet ranks below every month that has something. "Painting"
   is `isPainting()`, i.e. tagged `painting` — the same definition the counter above uses, so the
   two can never disagree. Ties break most-recent-first. Server-rendered, no JS.
+  - **Marking the current row took three signals, not one.** The obvious move — a background tint —
+    doesn't work alone on this near-white cream palette: a tint subtle enough not to fight the page
+    is too faint to notice. So the row gets a pink wash *plus* a solid pink left bar *plus* bolder,
+    darker text. A fourth signal, a "· this month" label, was built and then removed as redundant
+    once the other three were in.
+  - The table keeps `width: auto` and centers with `margin: 0 auto` — it's only as wide as its own
+    contents, and stretching three columns of small numbers across the 1920px body would read as an
+    empty expanse with digits at either end.
 - **The favorites/recent/random batches are carousels now** (`Carousel.astro` +
   `src/scripts/carousel.ts`), not `piece-grid` batches: a horizontal scroll-snap track showing one
   big piece at a time, with prev/next buttons that just `scrollBy` one viewport (dimmed at the

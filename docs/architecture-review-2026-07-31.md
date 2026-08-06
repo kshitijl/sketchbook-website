@@ -1,5 +1,13 @@
 # Architecture review — 2026-07-31
 
+> **Status, updated 2026-08-06.** This is a point-in-time snapshot; its findings are not all open
+> any more. Closed since: the leftover `SESSION` KV binding (finding 4), the dead code (finding 5),
+> and the HEIC master fix from the storage section — all deployed, with the details in
+> docs/TODO.md's 2026-07-31 section. Still open: the off-Cloudflare `rclone` backup (finding 3) and
+> re-uploading the 59 low-res iCloud-preview masters (the upload path now refuses new ones).
+> Everything else here — the "accept ~$0.60/month" storage verdict, "caching is correct, leave it
+> alone", the maintainability model — stands as written.
+
 A full read of the docs and codebase plus live production numbers (via `wrangler`), asked for
 directly by the owner: "figure out if/how we can simplify or improve this website... rock-solid,
 simple, dumb, fast, and free for me to keep running it on Cloudflare's infrastructure free tier."

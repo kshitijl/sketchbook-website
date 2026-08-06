@@ -1385,3 +1385,36 @@ happen anytime. As always: deploys only via `npm run deploy`, never the steps by
       every so often (`copy`, not `sync`: it never deletes local files, matching the bucket's own
       append-only rule). A script/doc note in `scripts/` + the architecture.md Backups section;
       no automation beyond that unless running it manually proves to be forgotten in practice.
+
+## Session of 2026-08-06: review cleanup, technical upload log, top-months table
+
+Worked through the 2026-07-31 review's queue. The items themselves are marked done in place in the
+section above (SESSION binding, dead code, HEIC→WebP master, the small-image guard, and the
+`/deploy-purge` caching bug found while deploying them) — recorded here is only what wasn't already
+an item.
+
+- [x] **The admin upload log is now explicit and technical** (owner directive). It reports source
+      format and size, which decoder ran, decoded dimensions and megapixels, each variant's output
+      dimensions / quality / byte size, what the master became and whether it was re-encoded at
+      all, elapsed time per image, then the POST's file count, total bytes, HTTP status and
+      duration. Failures print the actual exception and how long it ran before dying, instead of
+      going only to the console. Rationale, worth keeping in mind for anything added to this flow:
+      the only person who ever sees this screen is the site's technical owner, so the useful
+      default is *more* detail, not friendlier summaries — the point is noticing something odd (a
+      master that came out suspiciously small, a step that suddenly takes 30s) while it's
+      happening. Sample output and the standing instruction are in architecture.md's Images
+      section; `makeVariants()` takes the log function as a parameter so the encode step can
+      narrate itself.
+- [x] **Top painting months table**, under the lifetime counter at the bottom of the home page:
+      top 5 months by paintings made, then the current month appended with its **real** rank if it
+      missed the cut (`1 2 3 4 5` then `8`) rather than being hidden — a weak month showing 8th is
+      the information. A current month with nothing painted yet ranks below every month that has
+      something. `getTopPaintingMonths()` in `facets.ts`, three tests (ranking + tie-break, current
+      month appended, zero-painting current month). Verified against production by recounting
+      `pieces.json` in a throwaway script rather than trusting the new function: 9 months have a
+      painting, August 2026 really is 8th with 2. Reuses the existing `isPainting()` so it can
+      never disagree with the counter directly above it.
+- [x] **A note on the `astro check` / `dist/server/wrangler.json` loop**: both binding removals
+      (IMAGES, SESSION) were found by auditing generated config, not by anything breaking, and the
+      SESSION fix needed three attempts because the wrong ones still pass every check — see the new
+      **Bindings** section in architecture.md for the one-line command and what it should print.
