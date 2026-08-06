@@ -157,3 +157,42 @@ export function getPaintingStats(data: PiecesData, now: Date): PaintingStats {
 	const remainingForYearMilestone = nextYearMilestone - yearCount;
 	return { lifetimeCount, year, yearCount, nextYearMilestone, remainingForYearMilestone };
 }
+
+export interface PaintingMonth {
+	month: string; // 'YYYY-MM'
+	count: number;
+	rank: number; // 1-based, across every month that has at least one painting
+	isCurrent: boolean;
+}
+
+/**
+ * The best months for painting, plus how this one is going: the top `top` months by paintings made,
+ * with the current month appended at the end if it didn't make the cut — carrying its real rank, so
+ * a bad month says "17th" rather than hiding. A current month with no paintings yet ranks below
+ * every month that has any.
+ *
+ * UTC for the same reason `getPaintingStats()` uses it: `piece.date` is a bare 'YYYY-MM-DD' with no
+ * timezone, and Workers run in UTC, so reading the current month in local time would make the
+ * highlighted row depend on where the code happens to run.
+ */
+export function getTopPaintingMonths(data: PiecesData, now: Date, top = 5): PaintingMonth[] {
+	const counts = new Map<string, number>();
+	for (const piece of data.pieces) {
+		if (!isPainting(piece)) continue;
+		const month = piece.date.slice(0, 7);
+		counts.set(month, (counts.get(month) ?? 0) + 1);
+	}
+	const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+	// Ties break most-recent-first, matching the newest-first ordering used everywhere else.
+	const ranked = [...counts.entries()]
+		.sort((a, b) => b[1] - a[1] || b[0].localeCompare(a[0]))
+		.map(([month, count], i) => ({ month, count, rank: i + 1, isCurrent: month === currentMonth }));
+
+	const rows = ranked.slice(0, top);
+	if (!rows.some((row) => row.isCurrent)) {
+		rows.push(
+			ranked.find((row) => row.isCurrent) ?? { month: currentMonth, count: 0, rank: ranked.length + 1, isCurrent: true }
+		);
+	}
+	return rows;
+}

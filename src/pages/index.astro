@@ -3,7 +3,7 @@ import { env } from 'cloudflare:workers';
 import Base from '../layouts/Base.astro';
 import Carousel from '../components/Carousel.astro';
 import { getPieces } from '../lib/data';
-import { getPaintingStats, getPiecesByDateDescending, getPrimaryAsset, getRandomPieces, getTagFrequency } from '../lib/facets';
+import { getPaintingStats, getPiecesByDateDescending, getPrimaryAsset, getRandomPieces, getTagFrequency, getTopPaintingMonths } from '../lib/facets';
 import { imageUrl } from '../lib/images';
 import { setPageCacheHeaders } from '../lib/cache';
 import { categoryForTag, TAG_CATEGORIES } from '../lib/tagCategories';
@@ -13,6 +13,7 @@ setPageCacheHeaders(Astro.response.headers);
 
 const { data } = await getPieces(env.ART_BUCKET);
 const paintingStats = getPaintingStats(data, new Date());
+const topPaintingMonths = getTopPaintingMonths(data, new Date());
 
 const favorites = data.pieces
 	.filter((p): p is Piece & { favoriteRank: number } => p.favoriteRank !== null)
@@ -365,6 +366,27 @@ const timelineJson = JSON.stringify({
 				)}
 			</em>
 		</p>
+	)}
+
+	{paintingStats.lifetimeCount > 0 && (
+		<table class="month-ranks">
+			<caption>My best months for painting — and where this one stands.</caption>
+			<thead>
+				<tr><th scope="col">#</th><th scope="col">Month</th><th scope="col">Paintings</th></tr>
+			</thead>
+			<tbody>
+				{topPaintingMonths.map((row) => {
+					const [y, m] = row.month.split('-').map(Number);
+					return (
+						<tr class={row.isCurrent ? 'is-current' : undefined}>
+							<td>{row.rank}</td>
+							<td>{MONTH_NAMES[m - 1]} {y}{row.isCurrent && <span class="this-month"> · this month</span>}</td>
+							<td>{row.count}</td>
+						</tr>
+					);
+				})}
+			</tbody>
+		</table>
 	)}
 </Base>
 

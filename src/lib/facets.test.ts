@@ -11,6 +11,7 @@ import {
 	getTagFrequency,
 	isPainting,
 	getPaintingStats,
+	getTopPaintingMonths,
 	distanceMiles,
 	getNearbyPieces,
 	getTimelineNeighbors
@@ -283,5 +284,47 @@ describe('getPaintingStats', () => {
 		expect(stats.yearCount).toBe(100);
 		expect(stats.nextYearMilestone).toBe(200);
 		expect(stats.remainingForYearMilestone).toBe(100);
+	});
+});
+
+describe('getTopPaintingMonths', () => {
+	/** `n` paintings in `month`, plus one non-painting piece so tag filtering is always exercised. */
+	function paintingsIn(month: string, n: number): Piece[] {
+		return [
+			...Array.from({ length: n }, (_, i) => makePiece({ id: `${month}-${i}`, date: `${month}-01`, tags: ['painting'] })),
+			makePiece({ id: `${month}-sketch`, date: `${month}-02`, tags: ['pencil'] })
+		];
+	}
+
+	const data = makeData([
+		...paintingsIn('2026-01', 5),
+		...paintingsIn('2026-02', 4),
+		...paintingsIn('2026-03', 3),
+		...paintingsIn('2026-04', 2),
+		...paintingsIn('2026-05', 1),
+		...paintingsIn('2026-06', 1)
+	]);
+
+	it('ranks the top months by painting count, breaking ties most-recent-first', () => {
+		const rows = getTopPaintingMonths(data, new Date('2026-01-15T00:00:00Z'));
+		expect(rows.map((r) => [r.rank, r.month, r.count])).toEqual([
+			[1, '2026-01', 5],
+			[2, '2026-02', 4],
+			[3, '2026-03', 3],
+			[4, '2026-04', 2],
+			[5, '2026-06', 1] // ties with 2026-05 on count, wins on being more recent
+		]);
+		expect(rows.filter((r) => r.isCurrent).map((r) => r.month)).toEqual(['2026-01']);
+	});
+
+	it('appends the current month with its real rank when it misses the top five', () => {
+		const rows = getTopPaintingMonths(data, new Date('2026-05-15T00:00:00Z'));
+		expect(rows).toHaveLength(6);
+		expect(rows[5]).toEqual({ month: '2026-05', count: 1, rank: 6, isCurrent: true });
+	});
+
+	it('ranks a current month with no paintings yet below every month that has some', () => {
+		const rows = getTopPaintingMonths(data, new Date('2026-09-15T00:00:00Z'));
+		expect(rows[5]).toEqual({ month: '2026-09', count: 0, rank: 7, isCurrent: true });
 	});
 });

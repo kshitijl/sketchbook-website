@@ -775,11 +775,19 @@ correcting once:
   image within its grid column instead of leaving it flush left.
 - **The home page itself** is one continuous scroll rather than separate sections stacked
   top-to-bottom: a short personal intro (with links into `/tag/...?sort=asc` chronological reads)
-  → favorites → Map → recent pieces → Tags → random pieces → Timeline → the lifetime/year stat at
-  the very bottom (moved there from a boxed callout near the top, since it's "a stat I wanna look
-  at," not something a visitor needs first). Real art keeps appearing between the "explore by X"
+  → favorites → Map → recent pieces → Tags → random pieces → Timeline → the lifetime/year stat and
+  the top-months table at the very bottom (moved there from a boxed callout near the top, since
+  it's "a stat I wanna look at," not something a visitor needs first). Real art keeps appearing between the "explore by X"
   tools rather than being front-loaded once, matching explicit feedback: "a user comes in and it's
   like they're surrounded by my images, and then there's ways for them to enter in and see more."
+- **Top painting months** (`getTopPaintingMonths()`, added 2026-08-06) — a small table directly
+  under the lifetime counter: the five best months by paintings made, then the current month
+  appended at the end if it didn't make the cut, **carrying its real rank** (`1 2 3 4 5` then `8`),
+  highlighted. Showing the true rank rather than hiding a weak month is the point — it's the same
+  motivating-stat idea as the counter above it, and a month sitting at 8th is the information.
+  A current month with nothing painted yet ranks below every month that has something. "Painting"
+  is `isPainting()`, i.e. tagged `painting` — the same definition the counter above uses, so the
+  two can never disagree. Ties break most-recent-first. Server-rendered, no JS.
 - **The favorites/recent/random batches are carousels now** (`Carousel.astro` +
   `src/scripts/carousel.ts`), not `piece-grid` batches: a horizontal scroll-snap track showing one
   big piece at a time, with prev/next buttons that just `scrollBy` one viewport (dimmed at the

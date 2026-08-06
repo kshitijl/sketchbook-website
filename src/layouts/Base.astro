@@ -441,6 +441,53 @@ const deployedCommit = __BUILD_COMMIT__;
 				margin: 1.5rem 0 0.35rem;
 			}
 
+			/* Top-5 painting months, under the lifetime counter at the very bottom of the home page.
+			   Deliberately small and quiet like that counter — it's a stat the owner wants to look at,
+			   not something a visitor needs. `width: auto` because a three-column table of tiny numbers
+			   stretched across a 1920px body reads as an empty expanse with digits at either end. */
+			.month-ranks {
+				border-collapse: collapse;
+				font-size: 0.85rem;
+				color: var(--text-muted);
+				margin: 0 0 2rem;
+			}
+			.month-ranks caption {
+				text-align: left;
+				font-style: italic;
+				padding-bottom: 0.4rem;
+			}
+			.month-ranks th,
+			.month-ranks td {
+				text-align: left;
+				padding: 0.25rem 1.25rem 0.25rem 0;
+				font-weight: normal;
+			}
+			.month-ranks thead th {
+				font-family: var(--mono);
+				text-transform: uppercase;
+				font-size: 0.7rem;
+				border-bottom: 1px solid var(--text-muted);
+			}
+			/* The current month's row. A background tint alone would be the obvious way to mark it, but
+			   the palette is a near-white page — a tint light enough not to fight the page is too light
+			   to notice, so this leans on weight and a left bar as well, and states it in words too. */
+			.month-ranks .is-current {
+				background: #fff0f6; /* faintest wash of --pink */
+				color: var(--text);
+				font-weight: 600;
+			}
+			.month-ranks .is-current td:first-child {
+				box-shadow: inset 3px 0 0 var(--pink);
+				padding-left: 0.5rem;
+			}
+			.month-ranks .this-month {
+				font-family: var(--mono);
+				font-size: 0.7rem;
+				font-weight: normal;
+				color: var(--pink);
+				text-transform: uppercase;
+			}
+
 			/* Timeline activity bar chart (built server-side in index.astro): a row of year bars by
 			   default, each a vertical flex stack of medium-colored segments that pile up from the
 			   baseline; clicking a year swaps in its own row of at most 12 month bars. Both rows are
