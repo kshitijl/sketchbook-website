@@ -843,6 +843,7 @@ correcting once:
   - The table keeps `width: auto` and centers with `margin: 0 auto` — it's only as wide as its own
     contents, and stretching three columns of small numbers across the 1920px body would read as an
     empty expanse with digits at either end.
+  - **Every month links to `/paintings/<year>/<month>`** (see the page inventory).
 - **The favorites/recent/random batches are carousels now** (`Carousel.astro` +
   `src/scripts/carousel.ts`), not `piece-grid` batches: a horizontal scroll-snap track showing one
   big piece at a time, with prev/next buttons that just `scrollBy` one viewport (dimmed at the
@@ -983,6 +984,20 @@ following the same rule: never clobber a value the owner already set on purpose.
   `getNearbyPieces()` — both a count *and* a radius cap, so an isolated piece isn't padded out
   with pins hundreds of miles away).
 - `/tag/<slug>` — one template, covers medium tags, trip tags, and any other descriptive tag.
+- `/paintings/<year>` and `/paintings/<year>/<month>` — paintings from a period, e.g.
+  `/paintings/2026` and `/paintings/2026/06`. Reached from the top-months table's row links.
+  **Deliberately a readable path hierarchy, not a query string** (owner: "i don't like the
+  q=blah?blah? type urls"): it reads as a phrase, chopping the last segment walks up a level, and
+  the `paintings` prefix names the filter that's actually applied — these pages show *paintings
+  only*, matching the count in the table that linked to them, not every piece from the month.
+  Zero-padded numeric month (`06`, not `june`) so the segment is unambiguous and sortable.
+  - **Sorted oldest → newest**, the opposite of every other listing page, because browsing a period
+    is for watching the work develop forward through it ("so we see the development as time
+    progresses forward"). Both pages say "oldest first" under the heading so the difference doesn't
+    read as a bug. Both are `getPaintingsInPeriod()` — a year and a month differ only in how much of
+    the `YYYY-MM-DD` string the period prefix matches, so it's one function, not two.
+  - Replaced `/month/<YYYY-MM>` (2026-08-06 → 2026-08-12) with no redirect: it had existed for six
+    days and was linked from exactly one table on one page.
 - `/kind/<kind>` — one template, covers every asset kind (`/kind/setup`, `/kind/value-study`, ...);
   same big image-forward `piece-grid large` treatment as the home page, not a small thumbnail list.
 - `/admin` — upload form, edit-piece form, favorites reorder, bulk tagging — plain HTML forms with

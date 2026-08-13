@@ -1,0 +1,40 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../layouts/Base.astro';
+import PieceList from '../../components/PieceList.astro';
+import { getPieces } from '../../lib/data';
+import { getPaintingsInPeriod } from '../../lib/facets';
+import { setPageCacheHeaders } from '../../lib/cache';
+
+setPageCacheHeaders(Astro.response.headers);
+
+// `/paintings/<year>` — the whole year, oldest first. Its months live one level down at
+// `/paintings/<year>/<month>`; chopping the last path segment walks back up here.
+const { year } = Astro.params;
+const isValidYear = (y: string | undefined): y is string => !!y && /^\d{4}$/.test(y);
+
+if (!isValidYear(year)) {
+	Astro.response.status = 404;
+}
+
+const { data } = await getPieces(env.ART_BUCKET);
+const paintings = isValidYear(year) ? getPaintingsInPeriod(data, year) : [];
+---
+
+<Base title={isValidYear(year) ? `${year} paintings` : 'Not found'}>
+	{isValidYear(year) ? (
+		<>
+			<h1>{year}</h1>
+			{paintings.length === 0 ? (
+				<p><em>No paintings from {year}.</em></p>
+			) : (
+				<>
+					<p><em>{paintings.length} painting{paintings.length === 1 ? '' : 's'}, oldest first</em></p>
+					<PieceList pieces={paintings} large />
+				</>
+			)}
+		</>
+	) : (
+		<p>Not a year — expected four digits, like /paintings/2026.</p>
+	)}
+</Base>

@@ -168,13 +168,19 @@ export function monthLabel(month: string): string {
 	return `${MONTH_NAMES[Number(m) - 1]} ${year}`;
 }
 
-/** Every painting made in a 'YYYY-MM' month, newest first — the `/month/<month>` page behind each
- * row of the home page's top-months table. Paintings only, not every piece, so the page's contents
- * match the count in the table that linked to it. */
-export function getPaintingsInMonth(data: PiecesData, month: string): Piece[] {
+/**
+ * Every painting whose date falls in a period — `prefix` is 'YYYY' for a year or 'YYYY-MM' for a
+ * month, matched against the front of the 'YYYY-MM-DD' date string. One function for both because
+ * that's all the difference between them is. Powers `/paintings/<year>[/<month>]`.
+ *
+ * **Oldest first**, unlike the newest-first tag and kind pages: the point of browsing a period is
+ * watching the work develop forward through it. Paintings only, not every piece, so a page's
+ * contents match the count in the top-months table that linked to it.
+ */
+export function getPaintingsInPeriod(data: PiecesData, prefix: string): Piece[] {
 	return data.pieces
-		.filter((piece) => isPainting(piece) && piece.date.startsWith(`${month}-`))
-		.sort((a, b) => compareDatesDescending(a.date, b.date));
+		.filter((piece) => isPainting(piece) && piece.date.startsWith(prefix))
+		.sort((a, b) => compareDatesDescending(b.date, a.date)); // arguments swapped = ascending
 }
 
 export interface PaintingMonth {

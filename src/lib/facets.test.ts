@@ -11,7 +11,7 @@ import {
 	getTagFrequency,
 	isPainting,
 	getPaintingStats,
-	getPaintingsInMonth,
+	getPaintingsInPeriod,
 	getTopPaintingMonths,
 	distanceMiles,
 	getNearbyPieces,
@@ -288,15 +288,21 @@ describe('getPaintingStats', () => {
 	});
 });
 
-describe('getPaintingsInMonth', () => {
-	it('returns only that month\'s paintings, newest first', () => {
-		const data = makeData([
-			makePiece({ id: 'early', date: '2026-06-02', tags: ['painting'] }),
-			makePiece({ id: 'late', date: '2026-06-20', tags: ['painting'] }),
-			makePiece({ id: 'sketch', date: '2026-06-10', tags: ['pencil'] }),
-			makePiece({ id: 'next-month', date: '2026-07-01', tags: ['painting'] })
-		]);
-		expect(getPaintingsInMonth(data, '2026-06').map((p) => p.id)).toEqual(['late', 'early']);
+describe('getPaintingsInPeriod', () => {
+	const data = makeData([
+		makePiece({ id: 'jun-early', date: '2026-06-02', tags: ['painting'] }),
+		makePiece({ id: 'jun-late', date: '2026-06-20', tags: ['painting'] }),
+		makePiece({ id: 'jun-sketch', date: '2026-06-10', tags: ['pencil'] }),
+		makePiece({ id: 'jul', date: '2026-07-01', tags: ['painting'] }),
+		makePiece({ id: 'last-year', date: '2025-06-05', tags: ['painting'] })
+	]);
+
+	it('returns only that month\'s paintings, oldest first', () => {
+		expect(getPaintingsInPeriod(data, '2026-06').map((p) => p.id)).toEqual(['jun-early', 'jun-late']);
+	});
+
+	it('takes a bare year as the period, spanning its months', () => {
+		expect(getPaintingsInPeriod(data, '2026').map((p) => p.id)).toEqual(['jun-early', 'jun-late', 'jul']);
 	});
 });
 

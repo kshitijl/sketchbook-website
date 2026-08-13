@@ -1,0 +1,44 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../../layouts/Base.astro';
+import PieceList from '../../../components/PieceList.astro';
+import { getPieces } from '../../../lib/data';
+import { getPaintingsInPeriod, monthLabel } from '../../../lib/facets';
+import { setPageCacheHeaders } from '../../../lib/cache';
+
+setPageCacheHeaders(Astro.response.headers);
+
+// `/paintings/<year>/<month>` — one month, oldest first. Every row of the home page's top-months
+// table links here; `/paintings/<year>` is the same thing for the whole year.
+const { year, month } = Astro.params;
+const isValid = (y: string | undefined, m: string | undefined): boolean =>
+	!!y && !!m && /^\d{4}$/.test(y) && /^(0[1-9]|1[0-2])$/.test(m);
+
+const valid = isValid(year, month);
+if (!valid) {
+	Astro.response.status = 404;
+}
+
+const { data } = await getPieces(env.ART_BUCKET);
+const period = `${year}-${month}`;
+const paintings = valid ? getPaintingsInPeriod(data, period) : [];
+---
+
+<Base title={valid ? monthLabel(period) : 'Not found'}>
+	{valid ? (
+		<>
+			<h1>{monthLabel(period)}</h1>
+			<p><a href={`/paintings/${year}`}>← All of {year}</a></p>
+			{paintings.length === 0 ? (
+				<p><em>No paintings from {monthLabel(period)}.</em></p>
+			) : (
+				<>
+					<p><em>{paintings.length} painting{paintings.length === 1 ? '' : 's'}, oldest first</em></p>
+					<PieceList pieces={paintings} large />
+				</>
+			)}
+		</>
+	) : (
+		<p>Not a month — expected /paintings/2026/06.</p>
+	)}
+</Base>

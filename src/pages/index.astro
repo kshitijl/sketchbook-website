@@ -376,7 +376,7 @@ const timelineJson = JSON.stringify({
 				{topPaintingMonths.map((row) => (
 					<tr class={row.isCurrent ? 'is-current' : undefined}>
 						<td>{row.rank}</td>
-						<td><a href={`/month/${row.month}`}>{monthLabel(row.month)}</a></td>
+						<td><a href={`/paintings/${row.month.replace('-', '/')}`}>{monthLabel(row.month)}</a></td>
 						<td>{row.count}</td>
 					</tr>
 				))}

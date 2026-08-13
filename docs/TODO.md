@@ -1432,3 +1432,24 @@ an item.
       is silent (the deploy reports success) and only hits URLs that happen to be requested during
       the window, which is why it went unnoticed until a deploy added a brand-new route and those
       URLs got hit immediately by a verification script.
+
+## Period pages: /paintings/<year>[/<month>] (2026-08-12)
+
+- [x] **Month pages now sort oldest → newest, and years got the same page.** Owner's reasoning for
+      the flip: "so we see the development as time progresses forward" — the opposite of the
+      newest-first tag/kind pages, and deliberate, so both pages label themselves "oldest first"
+      rather than looking like a sort bug.
+- [x] **URL scheme, designed rather than defaulted** (owner: "design something reasonable and
+      readable, i don't like the q=blah?blah? type urls"). Landed on a path hierarchy —
+      `/paintings/2026` and `/paintings/2026/06` — over the alternatives:
+      - `/month/2026-06` + `/year/2026` (what existed): two route families for one idea, and no
+        relationship between a month and its year in the URL.
+      - `/2026/06` at the root: cleanest to read, rejected — it claims the whole top-level
+        namespace, so any future top-level route risks colliding with it.
+      - The `paintings` prefix earns its place by naming the filter: these pages show paintings
+        only (matching the top-months table's counts), not every piece from the period, and the URL
+        now says so. Month is zero-padded numeric (`06`, not `june`) — unambiguous and sortable.
+      - `getPaintingsInMonth()` became `getPaintingsInPeriod(data, prefix)`, since 'YYYY' and
+        'YYYY-MM' differ only in how much of the date string the prefix matches. One function.
+      - The old `/month/<YYYY-MM>` route is deleted outright, no redirect: six days old, linked
+        from exactly one table.
