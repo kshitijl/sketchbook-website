@@ -32,7 +32,6 @@ export const TAG_CATEGORIES: TagCategory[] = [
   {
     name: "Place",
     tags: [
-      "american southwest",
       "brooklyn",
       "california",
       "england",
@@ -41,8 +40,8 @@ export const TAG_CATEGORIES: TagCategory[] = [
       "mexico",
       "minnesota",
       "new england",
-      "nyc",
       "panama",
+      "queens",
       "utah",
     ],
   },
