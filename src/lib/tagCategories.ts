@@ -21,7 +21,10 @@ export const TAG_CATEGORIES: TagCategory[] = [
     name: "Trip/era",
     tags: [
       "2023 india trip",
+      "2026 acadia trip",
       "2026 sierra trip",
+      "2026 utah trip",
+      "2026 whidbey island workshop",
       "first india trip",
       "first marks",
     ],
@@ -37,6 +40,7 @@ export const TAG_CATEGORIES: TagCategory[] = [
       "manhattan",
       "mexico",
       "minnesota",
+      "new england",
       "nyc",
       "panama",
       "utah",
@@ -56,6 +60,7 @@ export const TAG_CATEGORIES: TagCategory[] = [
       "not my photo",
       "painted from life",
       "painted from photo",
+      "painted from my own sketch",
     ],
   },
   {
