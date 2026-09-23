@@ -12,6 +12,15 @@ The rest of `docs/TODO.md` is ~1,000 lines of build history, including detailed 
 bugs already hit. Don't read it top to bottom — grep it for the area you're touching before
 changing anything there.
 
+## This repo is public
+
+This repo is public on GitHub, and every commit must stay safe to push publicly. Never commit
+secrets (tokens, API keys, `.env` files, account/zone IDs), and never put a real secret value in
+docs, code comments or commit messages, even in passing. Secrets belong in Worker secrets
+(`wrangler secret put`), not the repo. Admin security comes from Cloudflare Access config, not from
+the code being private, so it must never depend on this code staying secret. See
+docs/architecture.md's "Public repo" section for the audit history.
+
 ## Development philosophy (read this before making any change)
 
 The owner is a grug-brain developer who hates pointless complexity and code bloat. This is a

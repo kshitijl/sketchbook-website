@@ -1010,6 +1010,37 @@ following the same rule: never clobber a value the owner already set on purpose.
 (gouache / watercolor / sketchbook page — see the Timeline section's bucket rules) and charted by
 density over `date` — surfaced as the interactive activity bar chart, stacked by that classification.
 
+## Public repo
+
+This repo is public, so every commit, including all of history, has to be safe to publish. The
+rule is in AGENTS.md. What keeps it true by construction:
+
+- **No persisted secrets exist at all.** `DEPLOY_PURGE_TOKEN` is regenerated on every deploy and
+  never written down (see Deploying). Purging the cache uses the in-Worker `cache.purge()`, so no
+  Cloudflare API token or zone ID is needed. `wrangler.jsonc` carries no account ID.
+- **Admin auth is edge config, not code.** Cloudflare Access guards `klauria.art/admin*`, so
+  reading the source reveals the admin routes but doesn't help anyone get past them. The one
+  way this could break is a new hostname pointing at the Worker without its own Access app (see
+  Auth).
+
+**Audit log**, newest first. Re-run a check like this whenever it has been a while, or after
+anything touching auth, secrets or hostnames:
+
+- **2026-09-23: clean.** Scanned all 88 commits, including since-deleted files, with `git log -p`.
+  Found no tokens, API keys, account/zone IDs, `.env` files or private keys. The only long
+  strings are lockfile integrity hashes, commit hashes and an `@example` in generated Workers
+  types. The site was probed with unauthenticated GETs. `/admin/`, `/Admin/`, `/%61dmin/`,
+  `//admin/` and `/admin/favorites` on klauria.art all 302 to the Access login.
+  `31-art-website.workers.dev` and `www.klauria.art` are NXDOMAIN. `/img/data/pieces.json` and
+  `/deploy-purge` (with no token, and with a wrong one) all 404. Things that are
+  public, deliberately: the owner's email (the commit author, also named as the Access policy's
+  email in docs/TODO.md), the R2 bucket names (useless without the Cloudflare account) and the
+  Access team domain. Added the MIT `LICENSE` for the code. The artwork is all-rights-reserved
+  and lives in R2, not in the repo (see README).
+- **2026-07-30**: first pre-publication audit. It found and fixed the unauthenticated
+  `workers.dev` admin and the `/img/` proxy leaking `data/pieces.json`. See docs/TODO.md's
+  "Security audit before making the repo public" section.
+
 ## Open items (deliberately deferred)
 
 - Exact validation rules for admin forms beyond what already exists (required fields, file-type

@@ -1,7 +1,38 @@
 # 31-art-website
 
-A personal art archive site (Astro + Cloudflare Workers/R2). See `docs/architecture.md` for the
-design and `docs/TODO.md` for the build plan.
+The code behind [klauria.art](https://klauria.art), a personal archive of my sketches and
+paintings (Astro + Cloudflare Workers/R2). See `docs/architecture.md` for the design and
+`docs/TODO.md` for the build history.
+
+## How it works: dynamic for me, static for everyone else
+
+Only one person can ever change anything on this site — me — and I do it every few days at most.
+The site is built around that fact.
+
+- **For me, it's a dynamic website.** I log in at `/admin` (behind Cloudflare Access) and upload,
+  edit, retag and reorder pieces through ordinary forms. Changes go live immediately. There's no
+  git commit, rebuild or redeploy to publish a painting.
+- **For everyone else, it's a static website.** A page is rendered once, then sits in
+  Cloudflare's edge cache for up to 30 days. Almost every visit is served straight from that
+  cache, the Worker never runs, and nothing is read from storage. Images are pre-generated in
+  three sizes when I upload them and served as immutable files, so nothing is ever resized on the
+  fly.
+- **Every edit I make clears the cache**, so the next visitor gets a freshly rendered page, which
+  is then cached again. The cache doesn't expire on a timer; it's only cleared when something
+  actually changes.
+
+So it's a hybrid: dynamic where writes happen (rarely, by one person), static where reads happen
+(constantly, by everyone). That's cheap for me, since it fits comfortably in Cloudflare's free and
+low tiers, and it's efficient for Cloudflare, which is mostly serving cached bytes rather than
+running code or hitting storage for each request.
+
+## License
+
+The **code** in this repository is MIT-licensed (see `LICENSE`). Use it however you like.
+
+The **artwork** is not. All the sketches, paintings and photographs shown on klauria.art are my
+own work, © Kshitij Lauria, all rights reserved. They aren't in this repository and aren't
+covered by the MIT license, so please don't reuse them without asking.
 
 ## Commands
 
