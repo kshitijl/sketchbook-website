@@ -2,9 +2,10 @@
 import { env } from 'cloudflare:workers';
 import Base from '../layouts/Base.astro';
 import Carousel from '../components/Carousel.astro';
+import MapSection from '../components/MapSection.astro';
+import Timeline from '../components/Timeline.astro';
 import { getPieces } from '../lib/data';
-import { getPaintingStats, getPiecesByDateDescending, getPrimaryAsset, getRandomPieces, getTagFrequency, getTopPaintingMonths, MONTH_NAMES, monthLabel } from '../lib/facets';
-import { imageUrl } from '../lib/images';
+import { getPaintingStats, getPiecesByDateDescending, getRandomPieces, getTagFrequency, getTopPaintingMonths, monthLabel } from '../lib/facets';
 import { setPageCacheHeaders } from '../lib/cache';
 import { categoryForTag, TAG_CATEGORIES } from '../lib/tagCategories';
 import type { Piece } from '../lib/types';
@@ -46,161 +47,6 @@ const groupedTags = TAG_CATEGORIES.map((category) => ({
 	tags: tagFrequency.filter(({ tag }) => categoryForTag(tag) === category.name)
 })).filter((group) => group.tags.length > 0);
 const otherTags = tagFrequency.filter(({ tag }) => !categoryForTag(tag));
-
-// Map data — escape `<` so a stray `</script>` inside a title/notes field can't break out of
-// this tag.
-const piecesJson = JSON.stringify(data.pieces).replace(/</g, '\\u003c');
-
-// Timeline: an activity bar chart — bar height is how many pieces, each bar stacked by medium
-// (dry/wet/other) so you can read both *how much* and *what kind* of work at a glance. Empty
-// months/years are kept as gaps (an empty bar) rather than skipped, so quiet stretches actually
-// show up instead of the axis silently compressing time.
-//
-// Two levels, not one flat row of months: with 10+ years of pieces, one bar per month (120+ bars)
-// squeezed into any reasonable container is too thin to tap precisely, especially on mobile — and
-// only gets worse as more years are added. Landing on a row of year bars instead (naturally
-// bounded — this grows by one a year) keeps every bar comfortably tappable; clicking a year drills
-// into its own row of at most 12 month bars, also always comfortably wide. setupTimelineChart
-// wires up both the drill-down and the month-click piece display.
-const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-// Every "YYYY-MM" from start to end inclusive, so the x-axis is continuous in time.
-function monthsBetween(start: string, end: string): string[] {
-	const result: string[] = [];
-	let [y, m] = start.split('-').map(Number);
-	const [ey, em] = end.split('-').map(Number);
-	while (y < ey || (y === ey && m <= em)) {
-		result.push(`${y}-${String(m).padStart(2, '0')}`);
-		if (++m > 12) { m = 1; y++; }
-	}
-	return result;
-}
-
-// Timeline buckets by medium tag, priority gouache > sketchbook page > watercolor: a piece tagged
-// both gouache and watercolor counts as gouache; both sketchbook-page and watercolor counts as
-// sketchbook page; watercolor only if it has neither of the other two. Anything with none of the
-// three falls into `other` (none today, but keeps the bar total honest if e.g. a pencil-only piece
-// is added later).
-type TimelineMedium = 'gouache' | 'watercolor' | 'sketchbook' | 'other';
-function timelineMedium(tags: string[]): TimelineMedium {
-	if (tags.includes('gouache')) return 'gouache';
-	if (tags.includes('sketchbook page')) return 'sketchbook';
-	if (tags.includes('watercolor')) return 'watercolor';
-	return 'other';
-}
-
-const monthBuckets = new Map<string, { pieces: Piece[]; gouache: number; watercolor: number; sketchbook: number; other: number }>();
-// Pieces grouped by year too (not just derived from monthBuckets) — clicking into a year browses
-// every piece that year in the gallery frame below, not just whichever month you then click.
-const yearPieces = new Map<number, Piece[]>();
-// Oldest-first within a bucket (unlike `allByDate`, used as-is elsewhere on this page for
-// newest-first carousels) — so paging "next" through a month or year moves chronologically
-// forward, the order you'd actually want to review a stretch of work in.
-const allByDateAscending = [...allByDate].reverse();
-for (const piece of allByDateAscending) {
-	const month = piece.date.slice(0, 7); // "YYYY-MM"
-	const year = Number(piece.date.slice(0, 4));
-	const bucket = monthBuckets.get(month) ?? { pieces: [], gouache: 0, watercolor: 0, sketchbook: 0, other: 0 };
-	bucket.pieces.push(piece);
-	bucket[timelineMedium(piece.tags)] += 1;
-	monthBuckets.set(month, bucket);
-	const piecesThisYear = yearPieces.get(year) ?? [];
-	piecesThisYear.push(piece);
-	yearPieces.set(year, piecesThisYear);
-}
-
-const presentMonths = [...monthBuckets.keys()].sort();
-const monthKeys = presentMonths.length
-	? monthsBetween(presentMonths[0], presentMonths[presentMonths.length - 1])
-	: [];
-const maxMonthCount = Math.max(1, ...[...monthBuckets.values()].map((b) => b.pieces.length));
-
-// Fixed pixel height for the tallest bar; every segment scales to it. Kept in the frontmatter (not
-// CSS) because the segment heights are computed here per month/year and handed to the markup
-// directly.
-const CHART_H = 160;
-const monthScale = CHART_H / maxMonthCount;
-const bars = monthKeys.map((month) => {
-	const bucket = monthBuckets.get(month);
-	const total = bucket?.pieces.length ?? 0;
-	const [y, m] = month.split('-').map(Number);
-	// Stacked bottom-to-top; only non-zero segments so the 2px flex gap never draws phantom lines.
-	const segs = bucket
-		? [
-			{ cls: 'seg-gouache', px: bucket.gouache * monthScale },
-				{ cls: 'seg-watercolor', px: bucket.watercolor * monthScale },
-			{ cls: 'seg-sketchbook', px: bucket.sketchbook * monthScale },
-			{ cls: 'seg-other', px: bucket.other * monthScale }
-		].filter((s) => s.px > 0)
-		: [];
-	return { month, total, year: y, label: `${MONTH_NAMES[m - 1]} ${y}`, segs };
-});
-
-// Year-level aggregation for the default drill-down view — same medium buckets, summed across
-// each year's months (including years that exist only as a gap, so a totally quiet year still
-// shows up as an empty, disabled bar rather than vanishing from the axis).
-const years = [...new Set(bars.map((b) => b.year))];
-const yearTotals = new Map<number, { gouache: number; watercolor: number; sketchbook: number; other: number; total: number }>();
-for (const month of monthKeys) {
-	const year = Number(month.slice(0, 4));
-	const bucket = monthBuckets.get(month);
-	const agg = yearTotals.get(year) ?? { gouache: 0, watercolor: 0, sketchbook: 0, other: 0, total: 0 };
-	if (bucket) {
-		agg.gouache += bucket.gouache;
-		agg.watercolor += bucket.watercolor;
-		agg.sketchbook += bucket.sketchbook;
-		agg.other += bucket.other;
-		agg.total += bucket.pieces.length;
-	}
-	yearTotals.set(year, agg);
-}
-const maxYearCount = Math.max(1, ...[...yearTotals.values()].map((a) => a.total));
-const yearScale = CHART_H / maxYearCount;
-const yearBars = years.map((year) => {
-	const agg = yearTotals.get(year)!;
-	const segs = [
-		{ cls: 'seg-gouache', px: agg.gouache * yearScale },
-		{ cls: 'seg-watercolor', px: agg.watercolor * yearScale },
-		{ cls: 'seg-sketchbook', px: agg.sketchbook * yearScale },
-		{ cls: 'seg-other', px: agg.other * yearScale }
-	].filter((s) => s.px > 0);
-	return { year, total: agg.total, segs };
-});
-
-function toTimelinePieces(pieces: Piece[]) {
-	return pieces.map((p) => {
-		const asset = getPrimaryAsset(p);
-		return {
-			id: p.id,
-			title: p.title,
-			date: p.date,
-			imageUrl: asset ? imageUrl(asset, 'card') : '',
-			placeName: p.location.placeName,
-			extra: p.assets.filter((a) => a.kind !== 'final').length
-		};
-	});
-}
-
-// Piece data for the gallery frame, keyed two ways — by month (clicking a specific month bar) and
-// by year (clicking a year bar browses every piece that year, before/without picking a month) —
-// only the non-empty buckets need entries. Escape `<` so a stray `</script>` inside a
-// title/notes field can't break out of this tag.
-const timelineJson = JSON.stringify({
-	months: Object.fromEntries(
-		monthKeys
-			.filter((month) => monthBuckets.has(month))
-			.map((month) => {
-				const bucket = monthBuckets.get(month)!;
-				const [y, m] = month.split('-').map(Number);
-				return [month, { label: `${MONTH_NAMES[m - 1]} ${y}`, pieces: toTimelinePieces(bucket.pieces) }];
-			})
-	),
-	years: Object.fromEntries(
-		years
-			.filter((year) => yearPieces.has(year))
-			.map((year) => [String(year), { label: String(year), pieces: toTimelinePieces(yearPieces.get(year)!) }])
-	)
-}).replace(/</g, '\\u003c');
 ---
 
 <Base title="Lauria's Sketchbook">
@@ -210,18 +56,7 @@ const timelineJson = JSON.stringify({
 
 	{favorites.length > 0 && <Carousel pieces={favorites} label="My favorite pieces I've made" />}
 
-	<section>
-		<h2>Map</h2>
-		{data.pieces.length === 0 ? (
-			<p><em>Nothing uploaded yet.</em></p>
-		) : (
-			<>
-				<p><em>Hover a pin for a preview, click it for the full piece below.</em></p>
-				<div id="map" style="height:65vh;"></div>
-				<div id="piece-detail" style="margin-top:1.5rem;"></div>
-			</>
-		)}
-	</section>
+	<MapSection pieces={data.pieces} />
 
 	{recents.length > 0 && <Carousel pieces={recents} label="Some recent pieces" />}
 
@@ -265,94 +100,7 @@ const timelineJson = JSON.stringify({
 
 	{randoms.length > 0 && <Carousel pieces={randoms} label="Some random pieces" />}
 
-	{bars.length > 0 && (
-		<section>
-			<h2>Timeline</h2>
-			<p><em>How much I've been making, year by year — click a year to browse everything from it, or drill into a specific month.</em></p>
-			<div class="timeline-legend">
-				<span><i class="swatch seg-gouache"></i>gouache</span>
-				<span><i class="swatch seg-watercolor"></i>watercolor</span>
-				<span><i class="swatch seg-sketchbook"></i>sketchbook page</span>
-			</div>
-
-			<p class="timeline-breadcrumb">
-				<button type="button" id="timeline-crumb-years" class="timeline-crumb">All years</button>
-				<span id="timeline-crumb-year-wrap" class="timeline-hidden">
-					{' › '}<button type="button" id="timeline-crumb-year" class="timeline-crumb"></button>
-				</span>
-				<span id="timeline-crumb-month-wrap" class="timeline-hidden">
-					{' › '}<span id="timeline-crumb-month"></span>
-				</span>
-			</p>
-
-			<div id="timeline-years">
-				<div class="timeline-chart" style={`--chart-h:${CHART_H}px;`}>
-					{yearBars.map((yb) => (
-						<button
-							class="timeline-bar"
-							data-year={yb.year}
-							disabled={yb.total === 0}
-							title={`${yb.year} · ${yb.total} ${yb.total === 1 ? 'piece' : 'pieces'}`}
-							aria-label={`${yb.year}, ${yb.total} ${yb.total === 1 ? 'piece' : 'pieces'}`}
-						>
-							{yb.segs.map((s) => (
-								<span class={`seg ${s.cls}`} style={`height:${s.px.toFixed(1)}px`}></span>
-							))}
-						</button>
-					))}
-				</div>
-				<div class="timeline-axis">
-					{yearBars.map((yb) => (
-						<span class="tick">{yb.year}</span>
-					))}
-				</div>
-			</div>
-
-			<div id="timeline-months" class="timeline-hidden">
-				{years.map((year) => (
-					<div class="timeline-month-group timeline-hidden" data-year={year}>
-						<div class="timeline-chart" style={`--chart-h:${CHART_H}px;`}>
-							{bars
-								.filter((bar) => bar.year === year)
-								.map((bar) => (
-									<button
-										class="timeline-bar"
-										data-month={bar.month}
-										disabled={bar.total === 0}
-										title={`${bar.label} · ${bar.total} ${bar.total === 1 ? 'piece' : 'pieces'}`}
-										aria-label={`${bar.label}, ${bar.total} ${bar.total === 1 ? 'piece' : 'pieces'}`}
-									>
-										{bar.segs.map((s) => (
-											<span class={`seg ${s.cls}`} style={`height:${s.px.toFixed(1)}px`}></span>
-										))}
-									</button>
-								))}
-						</div>
-						<div class="timeline-axis">
-							{bars
-								.filter((bar) => bar.year === year)
-								.map((bar) => (
-									<span class="tick">{MONTH_ABBR[Number(bar.month.slice(5, 7)) - 1]}</span>
-								))}
-						</div>
-					</div>
-				))}
-			</div>
-
-			<p class="timeline-month" id="timeline-month"></p>
-			<a id="timeline-piece-link" href="#" class="carousel-image">
-				<img id="timeline-image" alt="" />
-			</a>
-			<a class="carousel-caption timeline-caption" id="timeline-caption" href="#">
-				<span class="carousel-title" id="timeline-title"></span>
-				<span class="carousel-hint" id="timeline-hint"></span>
-			</a>
-			<div class="carousel-nav">
-				<button id="timeline-prev" class="carousel-prev" type="button" aria-label="Previous piece">‹</button>
-				<button id="timeline-next" class="carousel-next" type="button" aria-label="Next piece">›</button>
-			</div>
-		</section>
-	)}
+	{allByDate.length > 0 && <Timeline allByDate={allByDate} />}
 
 	{paintingStats.lifetimeCount > 0 && (
 		<p>
@@ -385,14 +133,7 @@ const timelineJson = JSON.stringify({
 	)}
 </Base>
 
-<script type="application/json" id="pieces-data" is:inline set:html={piecesJson} />
-<script type="application/json" id="timeline-data" is:inline set:html={timelineJson} />
-
 <script>
-	import { setupMap } from '../scripts/mapPage';
-	import { setupTimelineChart } from '../scripts/timelineChart';
 	import { setupCarousels } from '../scripts/carousel';
-	setupMap();
-	setupTimelineChart();
 	setupCarousels();
 </script>

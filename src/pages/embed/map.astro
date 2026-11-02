@@ -1,0 +1,16 @@
+---
+// The home page's map on its own, for framing in other sites (an <iframe> on klauria.tech).
+import { env } from 'cloudflare:workers';
+import Base from '../../layouts/Base.astro';
+import MapSection from '../../components/MapSection.astro';
+import { getPieces } from '../../lib/data';
+import { setPageCacheHeaders } from '../../lib/cache';
+
+setPageCacheHeaders(Astro.response.headers);
+
+const { data } = await getPieces(env.ART_BUCKET);
+---
+
+<Base title="Map · Lauria's Sketchbook" bare>
+	<MapSection pieces={data.pieces} />
+</Base>

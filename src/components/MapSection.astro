@@ -1,0 +1,32 @@
+---
+import type { Piece } from '../lib/types';
+
+interface Props {
+	pieces: Piece[];
+}
+const { pieces } = Astro.props;
+
+// Map data — escape `<` so a stray `</script>` inside a title/notes field can't break out of
+// this tag.
+const piecesJson = JSON.stringify(pieces).replace(/</g, '\\u003c');
+---
+
+<section>
+	<h2>Map</h2>
+	{pieces.length === 0 ? (
+		<p><em>Nothing uploaded yet.</em></p>
+	) : (
+		<>
+			<p><em>Hover a pin for a preview, click it for the full piece below.</em></p>
+			<div id="map" style="height:65vh;"></div>
+			<div id="piece-detail" style="margin-top:1.5rem;"></div>
+		</>
+	)}
+</section>
+
+<script type="application/json" id="pieces-data" is:inline set:html={piecesJson} />
+
+<script>
+	import { setupMap } from '../scripts/mapPage';
+	setupMap();
+</script>

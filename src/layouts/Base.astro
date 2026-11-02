@@ -5,8 +5,11 @@ interface Props {
 	description?: string;
 	/** Open Graph/Twitter image — must be an absolute URL (relative ones aren't valid OG images). */
 	image?: string;
+	/** For /embed/* pages, framed inside other sites: no header or debug footer, and links open in
+	 * a new tab instead of inside the frame. */
+	bare?: boolean;
 }
-const { title, description = "I draw and paint from life, in a sketchbook. It's how I look at things.", image } =
+const { title, description = "I draw and paint from life, in a sketchbook. It's how I look at things.", image, bare = false } =
 	Astro.props;
 
 // Debug footer: if reloading the same URL keeps showing the same renderId, that request was
@@ -38,6 +41,7 @@ const deployedCommit = __BUILD_COMMIT__;
 		<meta property="og:description" content={description} />
 		{image && <meta property="og:image" content={image} />}
 		<meta name="twitter:card" content={image ? 'summary_large_image' : 'summary'} />
+		{bare && <base target="_blank" />}
 		<style is:global>
 			:root {
 				color-scheme: light;
@@ -721,6 +725,7 @@ const deployedCommit = __BUILD_COMMIT__;
 		</style>
 	</head>
 	<body>
+		{!bare && (
 		<header class="site-header">
 			<a href="/" class="site-title">Lauria's Sketchbook</a>
 			<input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="Menu" />
@@ -733,10 +738,13 @@ const deployedCommit = __BUILD_COMMIT__;
 				<a href={`/tag/${encodeURIComponent('2023 india trip')}`}>India Trip</a>
 			</nav>
 		</header>
+		)}
 		<slot />
+		{!bare && (
 		<footer class="debug" data-render-id={renderId}>
 			rendered {renderedAt} · edge: {colo} · id: {renderId} · deployed {deployedAt} ({deployedCommit}) ·{' '}
 			<a href="/admin">Admin</a> · <a href="/admin/new">Add new piece</a>
 		</footer>
+		)}
 	</body>
 </html>

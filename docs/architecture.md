@@ -63,7 +63,8 @@ Two build steps exist and must not be conflated:
 
 Non-interactive pages are plain Astro components — zero JS shipped to the browser by default. Two
 **islands** on the home page hydrate and ship their own JS: the Leaflet map, and the timeline
-scrubber (see their own sections below).
+scrubber (see their own sections below). Each is a component (`src/components/MapSection.astro`,
+`src/components/Timeline.astro`) so `/embed/map` and `/embed/timeline` can render them alone.
 
 **Request walkthrough** (e.g. a viewer opening `/piece/042`):
 1. Cloudflare's anycast network routes to the nearest edge PoP.
@@ -1003,6 +1004,13 @@ following the same rule: never clobber a value the owner already set on purpose.
 - `/admin` — upload form, edit-piece form, favorites reorder, bulk tagging — plain HTML forms with
   full-page-reload submits. Favorites are reordered by dragging a row's handle (see **Admin form
   conveniences**), not by typing rank numbers.
+- `/embed/map` and `/embed/timeline` — the home page's map and timeline on their own, for framing in
+  another site (added 2026-11-02 for a post on klauria.tech about this site). Both islands live in
+  components (`MapSection.astro`, `Timeline.astro`) shared with `/`; the pages render them inside
+  `Base` with `bare`, which drops the header and debug footer and sets `<base target="_blank">` so
+  a click on a piece opens klauria.art in a new tab instead of inside the frame. Ordinary pages
+  otherwise: same `setPageCacheHeaders()`, same purge. Framing works because nothing sets
+  `X-Frame-Options` or a `frame-ancestors` CSP; adding either would break these embeds.
 - `/deploy-purge` — not a real page, a token-gated GET endpoint (see the Cache policy section) for
   purging the cache after a deploy from a CLI session that can't go through Cloudflare Access.
 
