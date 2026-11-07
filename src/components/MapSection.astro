@@ -3,8 +3,11 @@ import type { Piece } from '../lib/types';
 
 interface Props {
 	pieces: Piece[];
+	// Framed in another site (/embed/map): the wheel scrolls that page instead of zooming, and a
+	// pin opens its piece in a new tab instead of showing it below, which would overflow the frame.
+	embed?: boolean;
 }
-const { pieces } = Astro.props;
+const { pieces, embed = false } = Astro.props;
 
 // Map data — escape `<` so a stray `</script>` inside a title/notes field can't break out of
 // this tag.
@@ -17,8 +20,8 @@ const piecesJson = JSON.stringify(pieces).replace(/</g, '\\u003c');
 		<p><em>Nothing uploaded yet.</em></p>
 	) : (
 		<>
-			<p><em>Hover a pin for a preview, click it for the full piece below.</em></p>
-			<div id="map" style="height:65vh;"></div>
+			{!embed && <p><em>Hover a pin for a preview, click it for the full piece below.</em></p>}
+			<div id="map" style="height:65vh;" data-embed={embed ? '' : undefined}></div>
 			<div id="piece-detail" style="margin-top:1.5rem;"></div>
 		</>
 	)}

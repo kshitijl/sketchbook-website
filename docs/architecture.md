@@ -1008,8 +1008,15 @@ following the same rule: never clobber a value the owner already set on purpose.
   another site (added 2026-11-02 for a post on klauria.tech about this site). Both islands live in
   components (`MapSection.astro`, `Timeline.astro`) shared with `/`; the pages render them inside
   `Base` with `bare`, which drops the header and debug footer and sets `<base target="_blank">` so
-  a click on a piece opens klauria.art in a new tab instead of inside the frame. Ordinary pages
-  otherwise: same `setPageCacheHeaders()`, same purge. Framing works because nothing sets
+  a click on a piece opens klauria.art in a new tab instead of inside the frame. The embedded map
+  (`MapSection`'s `embed` prop, added 2026-11-07) also differs from the home page's in two ways,
+  both because the frame sits inside a page that scrolls: the mouse wheel doesn't zoom it
+  (`scrollWheelZoom: false`), so scrolling past it scrolls the host page instead of getting stuck
+  zooming the map; and a pin click opens `/piece/<id>` in a new tab instead of rendering the inline
+  detail panel, whose big images overflowed the fixed-height frame into a scrollbar inside the host
+  page's (and whose `scrollIntoView()` jerked the host page too). The "click it for the full piece
+  below" hint is left out there for the same reason. Ordinary pages otherwise: same
+  `setPageCacheHeaders()`, same purge. Framing works because nothing sets
   `X-Frame-Options` or a `frame-ancestors` CSP; adding either would break these embeds.
 - `/deploy-purge` — not a real page, a token-gated GET endpoint (see the Cache policy section) for
   purging the cache after a deploy from a CLI session that can't go through Cloudflare Access.

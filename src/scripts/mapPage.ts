@@ -51,10 +51,12 @@ export function setupMap(): void {
 	if (!dataEl || !mapEl || !detailEl) return;
 
 	const pieces: Piece[] = JSON.parse(dataEl.textContent || '[]');
+	// Framed in another site's page (see MapSection's `embed` prop).
+	const embed = 'embed' in mapEl.dataset;
 
 	// Starts zoomed out on the whole world, not auto-fit to wherever the pieces happen to be —
 	// the point of opening the map is seeing the globe, then zooming into a pin yourself.
-	const map = L.map(mapEl).setView([20, 0], 2);
+	const map = L.map(mapEl, { scrollWheelZoom: !embed }).setView([20, 0], 2);
 	L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 		attribution: '&copy; OpenStreetMap contributors',
 		maxZoom: 19
@@ -83,6 +85,10 @@ export function setupMap(): void {
 
 		marker.on('mouseover', () => marker.openPopup());
 		marker.on('click', () => {
+			if (embed) {
+				window.open(`/piece/${encodeURIComponent(piece.id)}`, '_blank');
+				return;
+			}
 			detailEl.innerHTML = renderDetail(piece);
 			detailEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
 		});
