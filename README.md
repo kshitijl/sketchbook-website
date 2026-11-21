@@ -1,13 +1,15 @@
 # 31-art-website
 
-The code behind [klauria.art](https://klauria.art), a personal archive of my sketches and
-paintings (Astro + Cloudflare Workers/R2). See `docs/architecture.md` for the design and
-`docs/TODO.md` for the build history.
+See my writeup about how this works: [I’m quite pleased by the tech architecture of my art website](https://klauria.tech/klauria-art/).
+
+This is the code behind [klauria.art](https://klauria.art), a personal archive of my sketches and
+paintings. See `docs/architecture.md` for the design and `docs/TODO.md` for the build history.
+
+It's pretty tied to Cloudflare. You could easily port the idea to some other hosting provider but the code would change a lot.
 
 ## How it works: dynamic for me, static for everyone else
 
-Only one person can ever change anything on this site — me — and I do it every few days at most.
-The site is built around that fact.
+I'm the only person who can change anything on this website. Edits are rare: about 0.2 edits a day, at most 4 edits a day. For everyone else it's read-only. The design follows from that:
 
 - **For me, it's a dynamic website.** I log in at `/admin` (behind Cloudflare Access) and upload,
   edit, retag and reorder pieces through ordinary forms. Changes go live immediately. There's no
@@ -18,8 +20,7 @@ The site is built around that fact.
   three sizes when I upload them and served as immutable files, so nothing is ever resized on the
   fly.
 - **Every edit I make clears the cache**, so the next visitor gets a freshly rendered page, which
-  is then cached again. The cache doesn't expire on a timer; it's only cleared when something
-  actually changes.
+  is then cached again. The cache is invalidated when I next change something, or when 30 days pass.
 
 So it's a hybrid: dynamic where writes happen (rarely, by one person), static where reads happen
 (constantly, by everyone). That's cheap for me, since it fits comfortably in Cloudflare's free and
