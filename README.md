@@ -1,8 +1,10 @@
-# 31-art-website
+# klauria.art
 
-See my writeup about how this works: [I’m quite pleased by the tech architecture of my art website](https://klauria.tech/klauria-art/).
+Here's the website itself: [klauria.art](https://klauria.art).
 
-This is the code behind [klauria.art](https://klauria.art), a personal archive of my sketches and
+See my writeup, which has pretty pictures: [I’m quite pleased by the tech architecture of my art website](https://klauria.tech/klauria-art/).
+
+This repo is the code behind [klauria.art](https://klauria.art), a personal archive of my sketches and
 paintings. See `docs/architecture.md` for the design and `docs/TODO.md` for the build history.
 
 It's pretty tied to Cloudflare. You could easily port the idea to some other hosting provider but the code would change a lot.
