@@ -37,6 +37,8 @@ The **artwork** is not. All the sketches, paintings and photographs shown on kla
 own work, © Kshitij Lauria, all rights reserved. They aren't in this repository and aren't
 covered by the MIT license, so please don't reuse them without asking.
 
+(The artwork isn't in this repo, it's hosted on Cloudflare in R2.)
+
 ## Commands
 
 | Command                 | Action                                                       |
